@@ -5,54 +5,84 @@
 
 #include "colour_bars.h"   
 #include "colour_gradients.h"   
-#include "grid.h"   
+#include "grid_16b.h"   
 #include "circles.h"   
 
+// PAL
 M5ModuleRCA RcaOutput ( 360                            // logical_width
                   , 240                            // logical_height
-                  , 360                            // output_width
-                  , 240                            // output_height
+                  , 384                            // output_width
+                  , 288                            // output_height
                   , M5ModuleRCA::signal_type_t::PAL // signal_type
                   , M5ModuleRCA::use_psram_t::psram_half_use
                   , 26                             // GPIO pin
-                  , 200
+                  , 128
                   );
+
+//                   // NTSC
+// M5ModuleRCA RcaOutput ( 360                            // logical_width
+//                   , 240                            // logical_height
+//                   , 360                            // output_width
+//                   , 240                           // output_height
+//                   , M5ModuleRCA::signal_type_t::NTSC // signal_type
+//                   , M5ModuleRCA::use_psram_t::psram_half_use
+//                   , 26                             // GPIO pin
+//                   , 128
+//                   );
 
 void setup() {
   M5.begin();
 
   M5.Display.setTextSize(2);
   M5.Display.clear();
-
-  RcaOutput.setColorDepth(m5gfx::color_depth_t::rgb565_2Byte);
+  
+  RcaOutput.setOutputBoost(true);
+  RcaOutput.setColorDepth(m5gfx::color_depth_t::rgb565_nonswapped);
   RcaOutput.init();
 }
 
 void loop() {
+  Serial.println("Working");
 
-    Serial.println("Working");
-    M5.Display.clear();
-    M5.Display.drawPng(colour_gradients_png, colour_gradients_png_len, 0, 0);
-    M5.Display.drawString("GRADIENTS", M5.Display.width() / 4, M5.Display.height() / 2);
-    RcaOutput.clear();
-    RcaOutput.drawPng(colour_gradients_png, colour_gradients_png_len, 0, 0);
-    delay(2000);
-    M5.Display.clear();
-    M5.Display.drawPng(circles_png, circles_png_len, 0, 0);
-    M5.Display.drawString("CIRCLES", M5.Display.width() / 4, M5.Display.height() / 2);
-    RcaOutput.clear();
-    RcaOutput.drawPng(circles_png, circles_png_len, 0, 0);
-    delay(2000);
-    M5.Display.clear();
-    M5.Display.drawPng(grid_png, grid_png_len, 0, 0);
-    M5.Display.drawString("GRID", M5.Display.width() / 4, M5.Display.height() / 2);
-    RcaOutput.clear();
-    RcaOutput.drawPng(grid_png, grid_png_len, 0, 0);
-    delay(2000);
-    M5.Display.clear();
-    M5.Display.drawPng(colour_bars_png, colour_bars_png_len, 0, 0);
-    M5.Display.drawString("BARS", M5.Display.width() / 4, M5.Display.height() / 2);
-    RcaOutput.clear();
-    RcaOutput.drawPng(colour_bars_png, colour_bars_png_len, 0, 0);
-    delay(2000);
+  M5.Display.clear();
+  M5.Display.drawRect(0, 0, 320, 240, TFT_RED);
+  M5.Display.drawRect(10, 10, 300, 220, TFT_GREEN);
+  M5.Display.drawRect(20, 20, 280, 200, TFT_BLUE);
+  M5.Display.fillCircle(160, 120, 5, TFT_WHITE);
+  RcaOutput.clear();
+  RcaOutput.drawRect(0, 0, 320, 240, TFT_RED);
+  RcaOutput.drawRect(10, 10, 300, 220, TFT_GREEN);
+  RcaOutput.drawRect(20, 20, 280, 200, TFT_BLUE);
+  RcaOutput.fillCircle(160, 120, 5, TFT_WHITE);
+  delay(2000);
+
+  M5.Display.clear();
+  M5.Display.drawPng(colour_gradients_png, colour_gradients_png_len, 0, 0);
+  M5.Display.drawString("GRADIENTS", M5.Display.width() / 4, M5.Display.height() / 2);
+  RcaOutput.clear();
+  RcaOutput.drawPng(colour_gradients_png, colour_gradients_png_len, 0, 0);
+  delay(2000);
+
+  M5.Display.clear();
+  M5.Display.drawBitmap(0, 0, 320, 240,  (uint16_t *)grid_png);
+  // M5.Display.drawPng(grid_png, grid_png_len, 0, 0);
+  M5.Display.drawString("GRID", M5.Display.width() / 4, M5.Display.height() / 2);
+  RcaOutput.clear();
+  // RcaOutput.drawPng(grid_png, grid_png_len, 0, 0);
+  RcaOutput.drawBitmap(0, 0, 320, 240,  (uint16_t *)grid_png);
+  delay(2000);
+
+
+  // M5.Display.clear();
+  // M5.Display.drawPng(circles_png, circles_png_len, 0, 0);
+  // M5.Display.drawString("CIRCLES", M5.Display.width() / 4, M5.Display.height() / 2);
+  // RcaOutput.clear();
+  // RcaOutput.drawPng(circles_png, circles_png_len, 0, 0);
+  // delay(2000);
+//   M5.Display.clear();
+//   M5.Display.drawPng(colour_bars_png, colour_bars_png_len, 0, 0);
+//   M5.Display.drawString("BARS", M5.Display.width() / 4, M5.Display.height() / 2);
+//   RcaOutput.clear();
+//   RcaOutput.drawPng(colour_bars_png, colour_bars_png_len, 0, 0);
+//   delay(2000);
 }
