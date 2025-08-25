@@ -45,6 +45,13 @@ void loop() {
   Serial.println("Working");
 
   M5.Display.clear();
+  M5.Display.pushImage(0, 0, 320, 240, (const lgfx::rgb565_t*)grid_bmp);
+  M5.Display.drawString("GRID", M5.Display.width() / 4, M5.Display.height() / 2);
+  RcaOutput.clear();
+  RcaOutput.pushImage(0, 0, 320, 240, (const lgfx::rgb565_t*)grid_bmp);
+  delay(2000);
+
+  M5.Display.clear();
   M5.Display.drawRect(0, 0, 320, 240, TFT_RED);
   M5.Display.drawRect(10, 10, 300, 220, TFT_GREEN);
   M5.Display.drawRect(20, 20, 280, 200, TFT_BLUE);
@@ -62,27 +69,4 @@ void loop() {
   RcaOutput.clear();
   RcaOutput.drawPng(colour_gradients_png, colour_gradients_png_len, 0, 0);
   delay(2000);
-
-  M5.Display.clear();
-  M5.Display.drawBitmap(0, 0, 320, 240,  (uint16_t *)grid_png);
-  // M5.Display.drawPng(grid_png, grid_png_len, 0, 0);
-  M5.Display.drawString("GRID", M5.Display.width() / 4, M5.Display.height() / 2);
-  RcaOutput.clear();
-  // RcaOutput.drawPng(grid_png, grid_png_len, 0, 0);
-  RcaOutput.drawBitmap(0, 0, 320, 240,  (uint16_t *)grid_png);
-  delay(2000);
-
-
-  // M5.Display.clear();
-  // M5.Display.drawPng(circles_png, circles_png_len, 0, 0);
-  // M5.Display.drawString("CIRCLES", M5.Display.width() / 4, M5.Display.height() / 2);
-  // RcaOutput.clear();
-  // RcaOutput.drawPng(circles_png, circles_png_len, 0, 0);
-  // delay(2000);
-//   M5.Display.clear();
-//   M5.Display.drawPng(colour_bars_png, colour_bars_png_len, 0, 0);
-//   M5.Display.drawString("BARS", M5.Display.width() / 4, M5.Display.height() / 2);
-//   RcaOutput.clear();
-//   RcaOutput.drawPng(colour_bars_png, colour_bars_png_len, 0, 0);
-//   delay(2000);
 }

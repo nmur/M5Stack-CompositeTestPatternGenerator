@@ -1,6 +1,9 @@
 {
     "files.associations": {
         "list": "cpp",
-        "type_traits": "cpp"
+        "type_traits": "cpp",
+        "array": "cpp",
+        "string": "cpp",
+        "string_view": "cpp"
     }
 }
