@@ -10,38 +10,99 @@
 #include "grid_16b.h"   
 #include "circles.h"   
 
-Preferences preferences;
+Preferences _preferences;
 
 const int VIDEO_MODE_BUTTON_PIN = 39;  
 bool _videoModeLastButtonState = HIGH;     
 bool _isPalMode = false;
 
-M5UnitRCA RcaOutput(360,                           // logical_width
-                    240,                           // logical_height
-                    384,                             // output_width (will be set in setup)
-                    288,                             // output_height (will be set in setup)
-                    M5UnitRCA::signal_type_t::PAL, // signal_type (will be updated in setup)
-                    M5UnitRCA::use_psram_t::psram_use,
-                    26,                            // GPIO pin
-                    128);
+M5UnitRCA _rcaOutput;
+
+M5UnitRCA GetPalRcaConfig();
+M5UnitRCA GetPalNtscConfig();
+
+void initLcdDisplay();
+void initRcaOutput();
+void loadVideoModeState();
+void setRcaOutputVideoMode();
+
+void restart();
+void toggleVideoModeIfButtonPressed();
+void toggleVideoMode();
+void saveIsPalState(bool isPalMode);
+
+void displayPattern();
+
+M5UnitRCA GetPalRcaConfig()
+{
+  return M5UnitRCA(360, 240,
+                   384, 288,
+                   M5UnitRCA::signal_type_t::PAL, 
+                   M5UnitRCA::use_psram_t::psram_use,
+                   26, 
+                   128);
+}
+
+M5UnitRCA GetPalNtscConfig()
+{
+  return M5UnitRCA(360, 240,
+                   360, 240,
+                   M5UnitRCA::signal_type_t::NTSC, 
+                   M5UnitRCA::use_psram_t::psram_use,
+                   26, 
+                   128);
+}
+
+void initLcdDisplay()
+{
+  M5.begin();
+  M5.Display.setTextSize(2);
+  M5.Display.clear();
+}
+
+void loadVideoModeState()
+{
+  _preferences.begin("video", false);
+  _isPalMode = _preferences.getBool("isPal", true);
+  _preferences.end();
+}
+
+void setRcaOutputVideoMode()
+{
+  if (_isPalMode)
+  {
+    _rcaOutput = GetPalRcaConfig();
+  }
+  else
+  {
+    _rcaOutput = GetPalNtscConfig();
+  }
+}
+
+void initRcaOutput()
+{
+  loadVideoModeState();
+  setRcaOutputVideoMode();
+
+  _rcaOutput.setOutputBoost(true);
+  _rcaOutput.init();
+  _rcaOutput.setColorDepth(m5gfx::color_depth_t::rgb565_nonswapped);
+}
+
+void displayPattern()
+{
+  M5.Display.clear();
+  M5.Display.pushImage(0, 0, 320, 240, (const lgfx::rgb565_t *)colour_bars_png);
+  M5.Display.drawString(_isPalMode ? "PAL" : "NTSC", M5.Display.width() / 4, M5.Display.height() / 2);
+  _rcaOutput.clear();
+  _rcaOutput.pushImage(0, 0, 320, 240, (const lgfx::rgb565_t *)colour_bars_png);
+}
 
 void saveIsPalState(bool isPalMode)
 {
-  preferences.begin("video", false);
-  preferences.putBool("isPal", isPalMode);
-  preferences.end();
-}
-
-void loadIsPalState()
-{
-  preferences.begin("video", false);
-  _isPalMode = preferences.getBool("isPal", true);
-  preferences.end();
-}
-
-void toggleVideoMode() {
-  saveIsPalState(!_isPalMode);
-  restart();
+  _preferences.begin("video", false);
+  _preferences.putBool("isPal", isPalMode);
+  _preferences.end();
 }
 
 void restart()
@@ -49,62 +110,9 @@ void restart()
   ESP.restart();
 }
 
-void setup() {
-  pinMode(VIDEO_MODE_BUTTON_PIN, INPUT_PULLUP);
-
-  M5.begin();
-  M5.Display.setTextSize(2);
-  M5.Display.clear();
-
-  InitRcaOutput();
-
-  M5.Display.clear();
-  M5.Display.pushImage(0, 0, 320, 240, (const lgfx::rgb565_t*)colour_bars_png);
-  M5.Display.drawString(_isPalMode ? "PAL" : "NTSC", M5.Display.width() / 4, M5.Display.height() / 2);
-  RcaOutput.clear();
-  RcaOutput.pushImage(0, 0, 320, 240, (const lgfx::rgb565_t*)colour_bars_png);
-}
-
-void InitRcaOutput()
-{
-  loadIsPalState();
-  SetRcaOutputVideoMode();
-
-  RcaOutput.setOutputBoost(true);
-  RcaOutput.init();
-  RcaOutput.setColorDepth(m5gfx::color_depth_t::rgb565_nonswapped);
-}
-
-void SetRcaOutputVideoMode()
-{
-  if (_isPalMode)
-  {
-    RcaOutput = M5UnitRCA(360,                           // logical_width
-                          240,                           // logical_height
-                          384,                           // output_width
-                          288,                           // output_height
-                          M5UnitRCA::signal_type_t::PAL, // signal_type
-                          M5UnitRCA::use_psram_t::psram_use,
-                          26, // GPIO pin
-                          128);
-  }
-  else
-  {
-    RcaOutput = M5UnitRCA(360,                            // logical_width
-                          240,                            // logical_height
-                          360,                            // output_width
-                          240,                            // output_height
-                          M5UnitRCA::signal_type_t::NTSC, // signal_type
-                          M5UnitRCA::use_psram_t::psram_use,
-                          26, // GPIO pin
-                          128);
-  }
-}
-
-void loop() {
-  toggleVideoModeIfButtonPressed();
-
-  delay(100);  
+void toggleVideoMode() {
+  saveIsPalState(!_isPalMode);
+  restart();
 }
 
 void toggleVideoModeIfButtonPressed()
@@ -120,4 +128,19 @@ void toggleVideoModeIfButtonPressed()
     }
   }
   _videoModeLastButtonState = currentButtonState;
+}
+
+void setup() {
+  pinMode(VIDEO_MODE_BUTTON_PIN, INPUT_PULLUP);
+
+  initLcdDisplay();
+  initRcaOutput();
+
+  displayPattern();
+}
+
+void loop() {
+  toggleVideoModeIfButtonPressed();
+
+  delay(100);  
 }
