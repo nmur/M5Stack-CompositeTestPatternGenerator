@@ -12,9 +12,19 @@
 
 Preferences _preferences;
 
-const int VIDEO_MODE_BUTTON_PIN = 39;  
+const int VIDEO_MODE_BUTTON_PIN = 39; // Button B
+const int PATTERN_BUTTON_PIN = 37; // Button A
+
 bool _videoModeLastButtonState = HIGH;     
+bool _patternLastButtonState = HIGH;
 bool _isPalMode = false;
+
+const uint16_t* PATTERNS[] = {
+  colour_bars_png, 
+  grid_bmp
+};
+const int PATTERN_COUNT = 2;
+int _currentPatternIndex = 0;
 
 M5UnitRCA _rcaOutput;
 
@@ -31,7 +41,9 @@ void toggleVideoModeIfButtonPressed();
 void toggleVideoMode();
 void saveIsPalState(bool isPalMode);
 
-void displayPattern();
+void displayPattern(const uint16_t* imageData);
+void cyclePattern();
+void checkPatternButton();
 
 M5UnitRCA GetPalRcaConfig()
 {
@@ -89,13 +101,13 @@ void initRcaOutput()
   _rcaOutput.setColorDepth(m5gfx::color_depth_t::rgb565_nonswapped);
 }
 
-void displayPattern()
+void displayPattern(const uint16_t* imageData)
 {
   M5.Display.clear();
-  M5.Display.pushImage(0, 0, 320, 240, (const lgfx::rgb565_t *)colour_bars_png);
-  M5.Display.drawString(_isPalMode ? "PAL" : "NTSC", M5.Display.width() / 4, M5.Display.height() / 2);
+  M5.Display.pushImage(0, 0, 320, 240, (const lgfx::rgb565_t *)imageData);
+  M5.Display.drawString(_isPalMode ? "PAL" : "NTSC", M5.Display.width() / 4, M5.Display.height() / 2 + 30);
   _rcaOutput.clear();
-  _rcaOutput.pushImage(0, 0, 320, 240, (const lgfx::rgb565_t *)colour_bars_png);
+  _rcaOutput.pushImage(0, 0, 320, 240, (const lgfx::rgb565_t *)imageData);
 }
 
 void saveIsPalState(bool isPalMode)
@@ -130,17 +142,40 @@ void toggleVideoModeIfButtonPressed()
   _videoModeLastButtonState = currentButtonState;
 }
 
+void cyclePattern()
+{
+  _currentPatternIndex = (_currentPatternIndex + 1) % PATTERN_COUNT;
+  displayPattern(PATTERNS[_currentPatternIndex]);
+}
+
+void checkPatternButton()
+{
+  bool currentButtonState = digitalRead(PATTERN_BUTTON_PIN);
+
+  if (currentButtonState == LOW && _patternLastButtonState == HIGH)
+  {
+    delay(50);  
+    if (digitalRead(PATTERN_BUTTON_PIN) == LOW)
+    {
+      cyclePattern();
+    }
+  }
+  _patternLastButtonState = currentButtonState;
+}
+
 void setup() {
   pinMode(VIDEO_MODE_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(PATTERN_BUTTON_PIN, INPUT_PULLUP);
 
   initLcdDisplay();
   initRcaOutput();
 
-  displayPattern();
+  displayPattern(colour_bars_png);
 }
 
 void loop() {
   toggleVideoModeIfButtonPressed();
+  checkPatternButton();
 
   delay(100);  
 }
