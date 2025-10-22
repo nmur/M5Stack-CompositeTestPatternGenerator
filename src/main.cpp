@@ -5,10 +5,15 @@
 #include <M5UnitRCA.h>
 #include <Preferences.h>
 
-#include "colour_bars_16b.h"   
-#include "colour_gradients.h"   
-#include "grid_16b.h"   
-#include "circles.h"   
+#include "colour_bars.h"   
+#include "grid.h"   
+#include "circles.h"
+#include "gradients.h"
+#include "white.h"
+// Not enough memory to include all patterns as raw bmp arrays for now
+// #include "red.h"
+// #include "green.h"
+// #include "blue.h"
 
 Preferences _preferences;
 
@@ -20,10 +25,16 @@ bool _patternLastButtonState = HIGH;
 bool _isPalMode = false;
 
 const uint16_t* PATTERNS[] = {
-  colour_bars_png, 
-  grid_bmp
+  colour_bars_bmp, 
+  grid_bmp, 
+  circles_bmp,
+  gradients_bmp,
+  white_bmp,
+  // red_bmp,
+  // green_bmp,
+  // blue_bmp
 };
-const int PATTERN_COUNT = 2;
+const int PATTERN_COUNT = 5;
 int _currentPatternIndex = 0;
 
 M5UnitRCA _rcaOutput;
@@ -170,7 +181,7 @@ void setup() {
   initLcdDisplay();
   initRcaOutput();
 
-  displayPattern(colour_bars_png);
+  displayPattern(colour_bars_bmp);
 }
 
 void loop() {
