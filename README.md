@@ -10,11 +10,11 @@ Features:
 - 16-bit colour (RGB565)
 - Built-in battery and screen
 
-## Building a Board
+## Setting up the Hardware
 
-(TODO)
+There are a couple of ways to go about this, see [this page](https://github.com/nmur/M5Stack-CompositeTestPatternGenerator/blob/main/docs/setting-up-hardware.md) for more information.
 
-The schematic is available [here]() (TODO).
+The schematic is available [here](https://github.com/nmur/M5Stack-CompositeTestPatternGenerator/blob/main/plot/schematic.png).
 
 ## Uploading the Firmware
 
