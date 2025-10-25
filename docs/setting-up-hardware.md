@@ -26,9 +26,6 @@ You can still assemble compatible hardware with all off-the-shelf parts from M5S
 
 <img width="473" height="406" alt="image" src="https://github.com/user-attachments/assets/22134a9a-933d-410b-a8bd-41a01e50a2a0" /> <img width="353" height="408" alt="image" src="https://github.com/user-attachments/assets/064eb660-67f7-47b6-97a3-2c4e87d25948" />
 
-<img width="835" height="466" alt="image" src="https://github.com/user-attachments/assets/1073bbcd-961f-47bd-9db9-be20ddd13bc2" />
-
-
 ## Off-the-Shelf M5Stack Components
  
 👍 No DIY required  
