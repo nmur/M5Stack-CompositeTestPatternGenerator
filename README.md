@@ -18,7 +18,7 @@ The schematic is available [here]() (TODO).
 
 ## Uploading the Firmware
 
-Navigate to the [Installation page]() (TODO) to connect to your device and flash the firmware from your browser directly.   
+Navigate to the [Installation page](https://nmur.github.io/M5Stack-CompositeTestPatternGenerator-WebInstaller/) to connect to your device and flash the firmware from your browser directly.   
 
 You'll need to install [CH340 drivers](https://www.wch-ic.com/downloads/CH341SER_ZIP.html) in order to connect to your device.
 
