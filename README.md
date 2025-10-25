@@ -2,7 +2,7 @@
 
 [![demonstration](./img/demonstration_thumb.jpg)](./img/demonstration.jpg)    [![board](./img/device_thumb.jpg)](./img/device.jpg)
 
-A portable composite video test pattern generator using the [M5StickC PLUS2 ESP32 controller](https://shop.m5stack.com/products/m5stickc-plus2-esp32-mini-iot-development-kit). This tool is aimed to be used as a quick and portable way of performing tests of basic functionality for CRT TVs.
+A portable composite video test pattern generator using the [M5StickC PLUS2 ESP32 controller](https://shop.m5stack.com/products/m5stickc-plus2-esp32-mini-iot-development-kit). This tool is aimed to be used as a quick and portable way of performing tests of basic functionality for CRT TVs in situations where hooking up an entire console would be inconvenient.
 
 Features:
 - PAL/NTSC support
@@ -29,6 +29,12 @@ Power the device on by holding the small power button on the left side, and conn
 Power the device off by holding the small power button for 5 seconds.
 
 The device will remember the last video format so you don't need to toggle it to your region every time it boots.
+
+## Roadmap
+
+- [ ] More patterns (currently limited by memory and an ineffectient storage method)
+- [ ] Scrolling tests
+- [ ] Custom image support (using SPIFFS)
 
 ## Acknowledgements
 
