@@ -13,7 +13,6 @@ You can still assemble compatible hardware with all off-the-shelf parts from M5S
 
 1. Print the PCB by uploading the [gerber zip file](https://github.com/nmur/M5Stack-CompositeTestPatternGenerator/raw/refs/heads/main/plot/Gerber_M5StickRcaHat_PCB_M5StickRcaHat.zip) to a service such as JLCPCB  
   a. Set the board thickness to 1mm
-  b. (I haven't tested v0.2 of the PCB yet, will update this when I can)
 3. Order the following extra parts  
   a. Yellow RCA jack ([Aliexpress](https://www.aliexpress.com/item/4000661815158.html?spm=a2g0o.order_list.order_list_main.5.2d491802O1wsq3))  
   b. 2.54mm 1x40P 90 Degree Right Angle Single Row Male Pin Header (reverse) ([Aliexpress](https://www.aliexpress.com/item/1005006795400618.html?spm=a2g0o.order_list.order_list_main.20.2d491802O1wsq3))  
@@ -22,7 +21,9 @@ You can still assemble compatible hardware with all off-the-shelf parts from M5S
   e. M5StickC Proto Hat ([M5Stack](https://shop.m5stack.com/products/m5stickc-proto-hat), [Aliexpress](https://www.aliexpress.com/item/1005003297314936.html))  
 4. Disassemble the M5StickC Proto Hat and put the blank PCB aside
 5. Solder the parts on the PCB, following the silkscreen text. Try to match the pin header positioning from the blank PCB in the Proto Hat
-6. Reassemble the Proto Hat
+  a. It may help to straighten the RCA jack pins with some pliers to make installation a bit easier  
+  b. After soldering all parts, you'll need to trim the leads pretty short as there's not much room between the PCB and the housing base
+7. Reassemble the Proto Hat
 
 <img width="473" height="406" alt="image" src="https://github.com/user-attachments/assets/22134a9a-933d-410b-a8bd-41a01e50a2a0" /> <img width="353" height="408" alt="image" src="https://github.com/user-attachments/assets/064eb660-67f7-47b6-97a3-2c4e87d25948" />
 
