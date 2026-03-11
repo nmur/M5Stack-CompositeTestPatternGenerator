@@ -147,7 +147,7 @@ uint16_t ComputeBilinearScaledPixel(
   return PackRgb565Pixel(blendedRedValue, blendedGreenValue, blendedBlueValue);
 }
 
-}  // namespace
+} 
 
 uint16_t* ImageScaler::ScaleImage50Percent(const uint16_t* imageData) {
   uint16_t* scaleImg = (uint16_t*)malloc(PreviewWidth * PreviewHeight * sizeof(uint16_t));
