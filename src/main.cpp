@@ -125,19 +125,52 @@ uint16_t* ScaleImage50Percent(const uint16_t* imageData) {
   return out; 
 }
 
-uint16_t* ScaleImageForPal(const uint16_t* imageData) {
+uint16_t* ScaleImageForPalBilinear(const uint16_t* imageData) {
   const int srcW = 320;
   const int srcH = 240;
   const int dstW = 384;
   const int dstH = 288;
-
   uint16_t* out = (uint16_t*) malloc(dstW * dstH * sizeof(uint16_t));
   if (!out) return nullptr;
+  // Precompute fixed-point scale (16.16)
+  const uint32_t xScale = ((uint32_t)(srcW - 1) << 16) / (dstW - 1);
+  const uint32_t yScale = ((uint32_t)(srcH - 1) << 16) / (dstH - 1);
   for (int y = 0; y < dstH; ++y) {
-    int sy = (y * 5) / 6; 
+    uint32_t fy = y * yScale;
+    int y0 = fy >> 16;
+    int y1 = (y0 < srcH - 1) ? (y0 + 1) : y0;
+    uint32_t wy = fy & 0xFFFF;          // 0..65535
+    uint32_t wy0 = 65536 - wy;
+    uint32_t wy1 = wy;
     for (int x = 0; x < dstW; ++x) {
-      int sx = (x * 5) / 6; 
-      out[y * dstW + x] = imageData[sy * srcW + sx];
+      uint32_t fx = x * xScale;
+      int x0 = fx >> 16;
+      int x1 = (x0 < srcW - 1) ? (x0 + 1) : x0;
+      uint32_t wx = fx & 0xFFFF;        // 0..65535
+      uint32_t wx0 = 65536 - wx;
+      uint32_t wx1 = wx;
+      uint16_t c00 = imageData[y0 * srcW + x0];
+      uint16_t c10 = imageData[y0 * srcW + x1];
+      uint16_t c01 = imageData[y1 * srcW + x0];
+      uint16_t c11 = imageData[y1 * srcW + x1];
+      // Expand RGB565
+      uint32_t r00 = (c00 >> 11) & 0x1F, g00 = (c00 >> 5) & 0x3F, b00 = c00 & 0x1F;
+      uint32_t r10 = (c10 >> 11) & 0x1F, g10 = (c10 >> 5) & 0x3F, b10 = c10 & 0x1F;
+      uint32_t r01 = (c01 >> 11) & 0x1F, g01 = (c01 >> 5) & 0x3F, b01 = c01 & 0x1F;
+      uint32_t r11 = (c11 >> 11) & 0x1F, g11 = (c11 >> 5) & 0x3F, b11 = c11 & 0x1F;
+      // Bilinear weights in 16.16 domain
+      uint32_t w00 = (uint32_t)(((uint64_t)wx0 * wy0) >> 16);
+      uint32_t w10 = (uint32_t)(((uint64_t)wx1 * wy0) >> 16);
+      uint32_t w01 = (uint32_t)(((uint64_t)wx0 * wy1) >> 16);
+      uint32_t w11 = (uint32_t)(((uint64_t)wx1 * wy1) >> 16);
+      // Weighted sum + rounding
+      uint32_t r = (r00 * w00 + r10 * w10 + r01 * w01 + r11 * w11 + 32768) >> 16;
+      uint32_t g = (g00 * w00 + g10 * w10 + g01 * w01 + g11 * w11 + 32768) >> 16;
+      uint32_t b = (b00 * w00 + b10 * w10 + b01 * w01 + b11 * w11 + 32768) >> 16;
+      if (r > 31) r = 31;
+      if (g > 63) g = 63;
+      if (b > 31) b = 31;
+      out[y * dstW + x] = (uint16_t)((r << 11) | (g << 5) | b);
     }
   }
   return out;
@@ -148,11 +181,11 @@ void displayPattern(const uint16_t* imageData)
   M5.Display.clear();
   M5.Display.pushImage(7, 7, 160, 120, (const lgfx::rgb565_t *)ScaleImage50Percent(imageData));
   M5.Display.drawString(_isPalMode ? "PAL" : "NTSC", 180, 30);
-  
+
   _rcaOutput.clear();
   if (_isPalMode) 
   {
-    _rcaOutput.pushImage(0, 0, 384, 288, (const lgfx::rgb565_t *)ScaleImageForPal(imageData));
+    _rcaOutput.pushImage(0, 0, 384, 288, (const lgfx::rgb565_t *)ScaleImageForPalBilinear(imageData));
   } 
   else 
   {
