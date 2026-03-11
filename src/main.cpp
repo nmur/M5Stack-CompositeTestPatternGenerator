@@ -40,7 +40,7 @@ int _currentPatternIndex = 0;
 M5UnitRCA _rcaOutput;
 
 M5UnitRCA GetPalRcaConfig();
-M5UnitRCA GetPalNtscConfig();
+M5UnitRCA GetNtscRcaConfig();
 
 void initLcdDisplay();
 void initRcaOutput();
@@ -58,7 +58,7 @@ void checkPatternButton();
 
 M5UnitRCA GetPalRcaConfig()
 {
-  return M5UnitRCA(360, 240,
+  return M5UnitRCA(384, 288,
                    384, 288,
                    M5UnitRCA::signal_type_t::PAL, 
                    M5UnitRCA::use_psram_t::psram_use,
@@ -66,10 +66,10 @@ M5UnitRCA GetPalRcaConfig()
                    128);
 }
 
-M5UnitRCA GetPalNtscConfig()
+M5UnitRCA GetNtscRcaConfig()
 {
-  return M5UnitRCA(360, 240,
-                   360, 240,
+  return M5UnitRCA(320, 240,
+                   320, 240,
                    M5UnitRCA::signal_type_t::NTSC, 
                    M5UnitRCA::use_psram_t::psram_use,
                    26, 
@@ -99,7 +99,7 @@ void setRcaOutputVideoMode()
   }
   else
   {
-    _rcaOutput = GetPalNtscConfig();
+    _rcaOutput = GetNtscRcaConfig();
   }
 }
 
@@ -125,13 +125,39 @@ uint16_t* ScaleImage50Percent(const uint16_t* imageData) {
   return out; 
 }
 
+uint16_t* ScaleImageForPal(const uint16_t* imageData) {
+  const int srcW = 320;
+  const int srcH = 240;
+  const int dstW = 384;
+  const int dstH = 288;
+
+  uint16_t* out = (uint16_t*) malloc(dstW * dstH * sizeof(uint16_t));
+  if (!out) return nullptr;
+  for (int y = 0; y < dstH; ++y) {
+    int sy = (y * 5) / 6; 
+    for (int x = 0; x < dstW; ++x) {
+      int sx = (x * 5) / 6; 
+      out[y * dstW + x] = imageData[sy * srcW + sx];
+    }
+  }
+  return out;
+}
+
 void displayPattern(const uint16_t* imageData)
 {
   M5.Display.clear();
   M5.Display.pushImage(7, 7, 160, 120, (const lgfx::rgb565_t *)ScaleImage50Percent(imageData));
   M5.Display.drawString(_isPalMode ? "PAL" : "NTSC", 180, 30);
+  
   _rcaOutput.clear();
-  _rcaOutput.pushImage(0, 0, 320, 240, (const lgfx::rgb565_t *)imageData);
+  if (_isPalMode) 
+  {
+    _rcaOutput.pushImage(0, 0, 384, 288, (const lgfx::rgb565_t *)ScaleImageForPal(imageData));
+  } 
+  else 
+  {
+    _rcaOutput.pushImage(0, 0, 320, 240, (const lgfx::rgb565_t *)imageData);
+  }
 }
 
 void saveIsPalState(bool isPalMode)
