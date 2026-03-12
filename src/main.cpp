@@ -54,6 +54,14 @@ void toggleVideoModeIfButtonPressed();
 void toggleVideoMode();
 void saveIsPalState(bool isPalMode);
 
+uint16_t* getPreviewImage(const uint16_t* imageData);
+void displayPreview(const uint16_t* imageData);
+const uint16_t* getNtscRcaImage(const uint16_t* imageData);
+uint16_t* getPalRcaImage(const uint16_t* imageData);
+void displayNtscRca(const uint16_t* imageData);
+void displayPalRca(const uint16_t* imageData);
+void displayRca(const uint16_t* imageData);
+
 void displayPattern(const uint16_t* imageData);
 void cyclePattern();
 void checkPatternButton();
@@ -115,15 +123,14 @@ void initRcaOutput()
   _rcaOutput.setColorDepth(m5gfx::color_depth_t::rgb565_nonswapped);
 }
 
-void displayPattern(const uint16_t* imageData)
+uint16_t* getPreviewImage(const uint16_t* imageData)
 {
-  uint16_t* previewImage = ImageScaler::ScaleImage50Percent(imageData);
-  uint16_t* palImage = nullptr;
+  return ImageScaler::ScaleImage50Percent(imageData);
+}
 
-  if (_isPalMode)
-  {
-    palImage = ImageScaler::ScaleImageForPalBilinear(imageData);
-  }
+void displayPreview(const uint16_t* imageData)
+{
+  uint16_t* previewImage = getPreviewImage(imageData);
 
   M5.Display.clear();
   if (previewImage)
@@ -132,21 +139,49 @@ void displayPattern(const uint16_t* imageData)
   }
   M5.Display.drawString(_isPalMode ? "PAL" : "NTSC", 180, 30);
 
-  _rcaOutput.clear();
-  if (_isPalMode) 
-  {
-    if (palImage)
-    {
-      _rcaOutput.pushImage(0, 0, ImageScaler::PalWidth, ImageScaler::PalHeight, (const lgfx::rgb565_t *)palImage);
-    }
-  } 
-  else 
-  {
-    _rcaOutput.pushImage(0, 0, ImageScaler::SourceWidth, ImageScaler::SourceHeight, (const lgfx::rgb565_t *)imageData);
-  }
-
   free(previewImage);
-  free(palImage);
+}
+
+const uint16_t* getNtscRcaImage(const uint16_t* imageData)
+{
+  return imageData;
+}
+
+uint16_t* getPalRcaImage(const uint16_t* imageData)
+{
+  return ImageScaler::ScaleImageForPalBilinear(imageData);
+}
+
+void displayNtscRca(const uint16_t* imageData)
+{
+  const uint16_t* ntscRcaImage = getNtscRcaImage(imageData);
+  _rcaOutput.pushImage(0, 0, ImageScaler::SourceWidth, ImageScaler::SourceHeight, (const lgfx::rgb565_t *)ntscRcaImage);
+}
+
+void displayPalRca(const uint16_t* imageData)
+{
+  const uint16_t* palRcaImage = getPalRcaImage(imageData);
+  _rcaOutput.pushImage(0, 0, ImageScaler::PalWidth, ImageScaler::PalHeight, (const lgfx::rgb565_t *)palRcaImage);
+}
+
+void displayRca(const uint16_t* imageData)
+{
+  _rcaOutput.clear();
+
+  if (_isPalMode)
+  {
+    displayPalRca(imageData);
+  }
+  else
+  {
+    displayNtscRca(imageData);
+  }
+}
+
+void displayPattern(const uint16_t* imageData)
+{
+  displayPreview(imageData);
+  displayRca(imageData);
 }
 
 void saveIsPalState(bool isPalMode)
