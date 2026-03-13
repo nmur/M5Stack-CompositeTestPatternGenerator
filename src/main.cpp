@@ -4,7 +4,9 @@
 #include <M5ModuleRCA.h>
 #include <M5UnitRCA.h>
 #include <Preferences.h>
+#include <stdlib.h>
 
+#include "ImageScaler.h"
 #include "colour_bars.h"   
 #include "grid.h"   
 #include "circles.h"
@@ -40,7 +42,7 @@ int _currentPatternIndex = 0;
 M5UnitRCA _rcaOutput;
 
 M5UnitRCA GetPalRcaConfig();
-M5UnitRCA GetPalNtscConfig();
+M5UnitRCA GetNtscRcaConfig();
 
 void initLcdDisplay();
 void initRcaOutput();
@@ -52,13 +54,21 @@ void toggleVideoModeIfButtonPressed();
 void toggleVideoMode();
 void saveIsPalState(bool isPalMode);
 
+uint16_t* getPreviewImage(const uint16_t* imageData);
+void displayPreview(const uint16_t* imageData);
+const uint16_t* getNtscRcaImage(const uint16_t* imageData);
+uint16_t* getPalRcaImage(const uint16_t* imageData);
+void displayNtscRca(const uint16_t* imageData);
+void displayPalRca(const uint16_t* imageData);
+void displayRca(const uint16_t* imageData);
+
 void displayPattern(const uint16_t* imageData);
 void cyclePattern();
 void checkPatternButton();
 
 M5UnitRCA GetPalRcaConfig()
 {
-  return M5UnitRCA(360, 240,
+  return M5UnitRCA(384, 288,
                    384, 288,
                    M5UnitRCA::signal_type_t::PAL, 
                    M5UnitRCA::use_psram_t::psram_use,
@@ -66,10 +76,10 @@ M5UnitRCA GetPalRcaConfig()
                    128);
 }
 
-M5UnitRCA GetPalNtscConfig()
+M5UnitRCA GetNtscRcaConfig()
 {
-  return M5UnitRCA(360, 240,
-                   360, 240,
+  return M5UnitRCA(320, 240,
+                   320, 240,
                    M5UnitRCA::signal_type_t::NTSC, 
                    M5UnitRCA::use_psram_t::psram_use,
                    26, 
@@ -99,7 +109,7 @@ void setRcaOutputVideoMode()
   }
   else
   {
-    _rcaOutput = GetPalNtscConfig();
+    _rcaOutput = GetNtscRcaConfig();
   }
 }
 
@@ -113,25 +123,65 @@ void initRcaOutput()
   _rcaOutput.setColorDepth(m5gfx::color_depth_t::rgb565_nonswapped);
 }
 
-uint16_t* ScaleImage50Percent(const uint16_t* imageData) {
-  uint16_t* out = (uint16_t*) malloc(19200 * sizeof(uint16_t));
-  if (!out) return nullptr;
-  size_t index = 0;
-  for (int y = 0; y < 240; y += 2) {
-    for (int x = 0; x < 320; x += 2) {
-      out[index++] = imageData[y * 320 + x];
-    }
+uint16_t* getPreviewImage(const uint16_t* imageData)
+{
+  return ImageScaler::ScaleImage50Percent(imageData);
+}
+
+void displayPreview(const uint16_t* imageData)
+{
+  uint16_t* previewImage = getPreviewImage(imageData);
+
+  M5.Display.clear();
+  if (previewImage)
+  {
+    M5.Display.pushImage(7, 7, ImageScaler::PreviewWidth, ImageScaler::PreviewHeight, (const lgfx::rgb565_t *)previewImage);
   }
-  return out; 
+  M5.Display.drawString(_isPalMode ? "PAL" : "NTSC", 180, 30);
+
+  free(previewImage);
+}
+
+const uint16_t* getNtscRcaImage(const uint16_t* imageData)
+{
+  return imageData;
+}
+
+uint16_t* getPalRcaImage(const uint16_t* imageData)
+{
+  return ImageScaler::ScaleImageForPalBilinear(imageData);
+}
+
+void displayNtscRca(const uint16_t* imageData)
+{
+  const uint16_t* ntscRcaImage = getNtscRcaImage(imageData);
+  _rcaOutput.pushImage(0, 0, ImageScaler::SourceWidth, ImageScaler::SourceHeight, (const lgfx::rgb565_t *)ntscRcaImage);
+}
+
+void displayPalRca(const uint16_t* imageData)
+{
+  const uint16_t* palRcaImage = getPalRcaImage(imageData);
+  _rcaOutput.pushImage(0, 0, ImageScaler::PalWidth, ImageScaler::PalHeight, (const lgfx::rgb565_t *)palRcaImage);
+}
+
+void displayRca(const uint16_t* imageData)
+{
+  _rcaOutput.clear();
+
+  if (_isPalMode)
+  {
+    displayPalRca(imageData);
+  }
+  else
+  {
+    displayNtscRca(imageData);
+  }
 }
 
 void displayPattern(const uint16_t* imageData)
 {
-  M5.Display.clear();
-  M5.Display.pushImage(7, 7, 160, 120, (const lgfx::rgb565_t *)ScaleImage50Percent(imageData));
-  M5.Display.drawString(_isPalMode ? "PAL" : "NTSC", 180, 30);
-  _rcaOutput.clear();
-  _rcaOutput.pushImage(0, 0, 320, 240, (const lgfx::rgb565_t *)imageData);
+  displayPreview(imageData);
+  displayRca(imageData);
 }
 
 void saveIsPalState(bool isPalMode)
