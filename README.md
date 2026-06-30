@@ -1,3 +1,6 @@
+> [!WARNING]
+> The M5StickC Plus2 has unfortunately reached EOL. The S3 replacement is not compatible with this project. I am not sure the older M5StickC Plus (which is still available) is compatible due to lack of psram.
+
 # M5Stack-CompositeTestPatternGenerator
 
 [![demonstration](./img/demonstration_thumb.jpg)](./img/demonstration.jpg)    [![board](./img/device_thumb.jpg)](./img/device.jpg)
