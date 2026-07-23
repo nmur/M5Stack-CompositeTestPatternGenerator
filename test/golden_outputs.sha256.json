@@ -1,0 +1,199 @@
+{
+  "format_version": 1,
+  "hash_encoding": "row-major RGB565 pixels serialized as little-endian uint16_t values",
+  "patterns": {
+    "blue": {
+      "legacy_header": "include/blue.h",
+      "outputs": {
+        "ntsc_320x240": {
+          "byte_count": 153600,
+          "height": 240,
+          "sha256": "a8f204bf06bbae43be1fed05db44361c489816c00f03d2b7e777a08ed7f32cc4",
+          "width": 320
+        },
+        "pal_384x288": {
+          "byte_count": 221184,
+          "height": 288,
+          "sha256": "72ca0ca0af4ea1e780adcc5551a937d2dab8e62edd56fbc3be875c5e196394ff",
+          "width": 384
+        },
+        "preview_160x120": {
+          "byte_count": 38400,
+          "height": 120,
+          "sha256": "36cb80cfb55ee344c9610c62481bb376cf0a1ed40574663d691b79299da47961",
+          "width": 160
+        }
+      },
+      "source_png": "include/blue.png"
+    },
+    "circles": {
+      "legacy_header": "include/circles.h",
+      "outputs": {
+        "ntsc_320x240": {
+          "byte_count": 153600,
+          "height": 240,
+          "sha256": "5bb108bd623017a6608362d6ba74243d5625fa28fec48807c6b40329ca9db3d1",
+          "width": 320
+        },
+        "pal_384x288": {
+          "byte_count": 221184,
+          "height": 288,
+          "sha256": "e9cc975f7e71437d0a30a9dab7d0dcc7fc189e33f18a83d10e3dda525562bfc4",
+          "width": 384
+        },
+        "preview_160x120": {
+          "byte_count": 38400,
+          "height": 120,
+          "sha256": "fba0ff3e729648b1deadbbbb2ab59fd2c97132ed2c355019d5859b1c22ea7f5f",
+          "width": 160
+        }
+      },
+      "source_png": "include/circles.png"
+    },
+    "colour_bars": {
+      "legacy_header": "include/colour_bars.h",
+      "outputs": {
+        "ntsc_320x240": {
+          "byte_count": 153600,
+          "height": 240,
+          "sha256": "0cc8a6aaf8876c4898a1cd21d794f992076561b5fc14fe1bea15f0d8f2ec20e1",
+          "width": 320
+        },
+        "pal_384x288": {
+          "byte_count": 221184,
+          "height": 288,
+          "sha256": "ccc050b06ddd51b369e8e2a6bf9cfa499bcd113bd3ac697c11c8b39b85803a7c",
+          "width": 384
+        },
+        "preview_160x120": {
+          "byte_count": 38400,
+          "height": 120,
+          "sha256": "9b8b9747dabba45452faa883b0b77fe7e17d68beae8cf40ff18d7f97a935e251",
+          "width": 160
+        }
+      },
+      "source_png": "include/colour_bars.png"
+    },
+    "gradients": {
+      "legacy_header": "include/gradients.h",
+      "outputs": {
+        "ntsc_320x240": {
+          "byte_count": 153600,
+          "height": 240,
+          "sha256": "25e869cd33818347e7facdd3574ff1ed0841e2cb69d363c46950050b70080dfb",
+          "width": 320
+        },
+        "pal_384x288": {
+          "byte_count": 221184,
+          "height": 288,
+          "sha256": "776353ba3f4e1291cde5bbe094727a8385066ce394dc4fe8419869c857a5d806",
+          "width": 384
+        },
+        "preview_160x120": {
+          "byte_count": 38400,
+          "height": 120,
+          "sha256": "161f7d3372360278644be3b42ff2aef38497bc5e3a0fcb9b6894163c28b7cf58",
+          "width": 160
+        }
+      },
+      "source_png": "include/colour_gradients.png"
+    },
+    "green": {
+      "legacy_header": "include/green.h",
+      "outputs": {
+        "ntsc_320x240": {
+          "byte_count": 153600,
+          "height": 240,
+          "sha256": "aa2f5423e0d5d53ca3ce34df7e10695213995cdbf572bb699595510a8cfb8923",
+          "width": 320
+        },
+        "pal_384x288": {
+          "byte_count": 221184,
+          "height": 288,
+          "sha256": "c10a8f941fbdc3767194037263025383be32234820591ae06f504278bb281fc2",
+          "width": 384
+        },
+        "preview_160x120": {
+          "byte_count": 38400,
+          "height": 120,
+          "sha256": "9dc3dfacf529f191519eba444a7ab1b1d9a3883156085221e963a41da18f8879",
+          "width": 160
+        }
+      },
+      "source_png": "include/green.png"
+    },
+    "grid": {
+      "legacy_header": "include/grid.h",
+      "outputs": {
+        "ntsc_320x240": {
+          "byte_count": 153600,
+          "height": 240,
+          "sha256": "97e0c0bb442dec4ed6b2968383f5e3e57d8fa1318588da06c65a805999915e49",
+          "width": 320
+        },
+        "pal_384x288": {
+          "byte_count": 221184,
+          "height": 288,
+          "sha256": "a428613fb0f0f1f21c7a6f930b0034ddc3f1e76a1965d58319fd6ccb2d0b389e",
+          "width": 384
+        },
+        "preview_160x120": {
+          "byte_count": 38400,
+          "height": 120,
+          "sha256": "57fab8563e5b518056b15953dff65b22b685112db651ad2a4ceaf684819ba596",
+          "width": 160
+        }
+      },
+      "source_png": "include/grid.png"
+    },
+    "red": {
+      "legacy_header": "include/red.h",
+      "outputs": {
+        "ntsc_320x240": {
+          "byte_count": 153600,
+          "height": 240,
+          "sha256": "6c3c796f317b1dedac4e04e377080d92154b3f28f4e8d5252a3f2d083245cc86",
+          "width": 320
+        },
+        "pal_384x288": {
+          "byte_count": 221184,
+          "height": 288,
+          "sha256": "08e59ab78542bbc5020f8e9ae8598837e4aa09c31201d533ac4dfad3257e678b",
+          "width": 384
+        },
+        "preview_160x120": {
+          "byte_count": 38400,
+          "height": 120,
+          "sha256": "0e1f7db0b2e23c9d24d6130b4adf4f2814d8661e3549836a4b3f05229b3425cf",
+          "width": 160
+        }
+      },
+      "source_png": "include/red.png"
+    },
+    "white": {
+      "legacy_header": "include/white.h",
+      "outputs": {
+        "ntsc_320x240": {
+          "byte_count": 153600,
+          "height": 240,
+          "sha256": "c4091db183efc400377abbe2c82f580d2d99445a7a7221f7efecd249f4405184",
+          "width": 320
+        },
+        "pal_384x288": {
+          "byte_count": 221184,
+          "height": 288,
+          "sha256": "b30c667b1470a8df60b8e9d47dc5d9c8174458c1a72b076eef340594e10e113f",
+          "width": 384
+        },
+        "preview_160x120": {
+          "byte_count": 38400,
+          "height": 120,
+          "sha256": "2ddde7f605a8696614ed456fe76a935bca6ab8cdf96027071c05ec69705e4dbe",
+          "width": 160
+        }
+      },
+      "source_png": "include/white.png"
+    }
+  },
+  "renderer": "src/ImageScaler.cpp preview sampling and 16.16 fixed-point PAL bilinear"
+}

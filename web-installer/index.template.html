@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>M5StickC Composite Test Pattern Generator Installer</title>
+    <style>
+      :root {
+        font-family: system-ui, sans-serif;
+        color-scheme: light dark;
+        --content-width: 48rem;
+        --card-border: color-mix(in srgb, CanvasText 22%, transparent);
+        --muted: color-mix(in srgb, CanvasText 70%, transparent);
+        --experimental: #ad6500;
+        --esp-tools-button-color: #ca3b2f;
+        --esp-tools-button-text-color: white;
+        --esp-tools-button-border-radius: 0.45rem;
+      }
+
+      body {
+        box-sizing: border-box;
+        margin: 0 auto;
+        max-width: var(--content-width);
+        padding: 2rem 1rem 4rem;
+        background: Canvas;
+        color: CanvasText;
+      }
+
+      h1 {
+        line-height: 1.15;
+      }
+
+      .lede,
+      footer {
+        color: var(--muted);
+      }
+
+      .devices {
+        display: grid;
+        gap: 1rem;
+        margin-block: 2rem;
+      }
+
+      .device {
+        padding: 1.25rem;
+        border: 1px solid var(--card-border);
+        border-radius: 0.75rem;
+      }
+
+      .device h2 {
+        margin-top: 0;
+      }
+
+      .experimental {
+        color: var(--experimental);
+        font-weight: 700;
+      }
+
+      esp-web-install-button {
+        display: block;
+        margin-top: 1rem;
+      }
+
+      footer {
+        font-size: 0.9rem;
+      }
+    </style>
+    <script
+      type="module"
+      src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"
+    ></script>
+  </head>
+  <body>
+    <main>
+      <h1>Composite Test Pattern Generator</h1>
+      <p class="lede">
+        Firmware version @@VERSION@@. Select the M5StickC model connected by
+        USB. These installers do not support ESP32-S3 devices.
+      </p>
+
+      <div class="devices">
+        <section class="device">
+          <h2>M5StickC Plus v1/v1.1</h2>
+          <p>
+            <span class="experimental">Validation pending:</span>
+            the automated Plus v1 suite passes, but physical cold-power and
+            visual checks remain; v1.1 has not been tested separately.
+          </p>
+          <esp-web-install-button manifest="manifest-m5stickc-plus.json">
+          </esp-web-install-button>
+        </section>
+
+        <section class="device">
+          <h2>M5StickC Plus2</h2>
+          <p>
+            <span class="experimental">Validation pending:</span>
+            the common no-PSRAM renderer builds for Plus2, but this revision
+            must pass its hardware suite before publication.
+          </p>
+          <esp-web-install-button manifest="manifest-m5stickc-plus2.json">
+          </esp-web-install-button>
+        </section>
+
+        <section class="device">
+          <h2>M5StickC Plus SE</h2>
+          <p>
+            <span class="experimental">Experimental support:</span>
+            this target uses the Plus-compatible PlatformIO definition until a
+            dedicated Plus SE definition is available.
+          </p>
+          <esp-web-install-button manifest="manifest-m5stickc-plus-se.json">
+          </esp-web-install-button>
+        </section>
+      </div>
+    </main>
+
+    <footer>
+      Installation requires a Web Serial-capable desktop browser and the USB
+      serial driver for your device.
+    </footer>
+  </body>
+</html>

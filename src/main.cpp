@@ -22,6 +22,14 @@
 #define PATTERN_SELF_TEST_CYCLES 0
 #endif
 
+#ifndef HARDWARE_TEST_SERIAL_COMMANDS
+#define HARDWARE_TEST_SERIAL_COMMANDS 0
+#endif
+
+#ifndef HARDWARE_TEST_FORCE_DEFAULT_MODE
+#define HARDWARE_TEST_FORCE_DEFAULT_MODE 0
+#endif
+
 #if PATTERN_SELF_TEST_CYCLES < 0
 #error "PATTERN_SELF_TEST_CYCLES must not be negative"
 #endif
@@ -90,6 +98,9 @@ bool displayRca(const PatternAssets::Asset& asset);
 void displayPattern(const PatternAssets::Asset& asset, const char* patternName);
 void cyclePattern();
 void checkPatternButton();
+#if HARDWARE_TEST_SERIAL_COMMANDS
+void checkSerialCommand();
+#endif
 
 M5UnitRCA GetPalRcaConfig()
 {
@@ -260,9 +271,16 @@ void initLcdDisplay()
 
 void loadVideoModeState()
 {
+#if HARDWARE_TEST_FORCE_DEFAULT_MODE
+  _isPalMode = DEFAULT_IS_PAL_MODE;
+  Serial.printf(
+    "[diag] video preference bypassed for hardware test mode=%s\n",
+    _isPalMode ? "PAL" : "NTSC");
+#else
   _preferences.begin("video", false);
   _isPalMode = _preferences.getBool("isPal", DEFAULT_IS_PAL_MODE);
   _preferences.end();
+#endif
 }
 
 void setRcaOutputVideoMode()
@@ -619,6 +637,41 @@ void checkPatternButton()
   _patternLastButtonState = currentButtonState;
 }
 
+#if HARDWARE_TEST_SERIAL_COMMANDS
+void checkSerialCommand()
+{
+  while (Serial.available() > 0)
+  {
+    const char command = static_cast<char>(Serial.read());
+    switch (command)
+    {
+      case 'n':
+      case 'N':
+        Serial.println("[diag] serial command=next-pattern");
+        cyclePattern();
+        break;
+
+      case 'm':
+      case 'M':
+        Serial.println("[diag] serial command=toggle-mode");
+        toggleVideoMode();
+        return;
+
+      case '\r':
+      case '\n':
+        break;
+
+      default:
+        Serial.printf(
+          "[diag] serial command=ignored value=0x%02x\n",
+          static_cast<unsigned int>(
+            static_cast<unsigned char>(command)));
+        break;
+    }
+  }
+}
+#endif
+
 void setup() {
   initDiagnostics();
 
@@ -650,6 +703,7 @@ void setup() {
         PatternAssets::kNames[patternIndex]);
     }
   }
+  _currentPatternIndex = static_cast<int>(PatternAssets::kCount) - 1;
   logMemoryDiagnostics("after pattern self-test");
   Serial.println("[diag] pattern self-test complete");
 #endif
@@ -658,6 +712,9 @@ void setup() {
 void loop() {
   toggleVideoModeIfButtonPressed();
   checkPatternButton();
+#if HARDWARE_TEST_SERIAL_COMMANDS
+  checkSerialCommand();
+#endif
 
   delay(100);  
 }
