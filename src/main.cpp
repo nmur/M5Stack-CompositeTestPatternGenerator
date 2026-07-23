@@ -7,22 +7,23 @@
 #include <esp_heap_caps.h>
 #include <esp_system.h>
 #include <esp32-hal-psram.h>
-#include <stdlib.h>
 
 #include "ImageScaler.h"
-#include "colour_bars.h"   
-#include "grid.h"   
-#include "circles.h"
-#include "gradients.h"
-#include "white.h"
-// Not enough memory to include all patterns as raw bmp arrays for now
-// #include "red.h"
-// #include "green.h"
-// #include "blue.h"
+#include "PatternDecoder.h"
+#include "ScanlineRenderer.h"
+#include "generated/PatternAssets.h"
 
 // Override only for diagnostics; persisted user preferences still take priority.
 #ifndef DEFAULT_VIDEO_MODE_PAL
 #define DEFAULT_VIDEO_MODE_PAL 1
+#endif
+
+#ifndef PATTERN_SELF_TEST_CYCLES
+#define PATTERN_SELF_TEST_CYCLES 0
+#endif
+
+#if PATTERN_SELF_TEST_CYCLES < 0
+#error "PATTERN_SELF_TEST_CYCLES must not be negative"
 #endif
 
 Preferences _preferences;
@@ -36,17 +37,9 @@ bool _patternLastButtonState = HIGH;
 bool _isPalMode = false;
 bool _isRcaOutputReady = false;
 
-const uint16_t* PATTERNS[] = {
-  colour_bars_bmp, 
-  grid_bmp, 
-  circles_bmp,
-  gradients_bmp,
-  white_bmp,
-  // red_bmp,
-  // green_bmp,
-  // blue_bmp
-};
-const int PATTERN_COUNT = 5;
+static_assert(PatternAssets::kCount == 8, "All eight test patterns must be enabled");
+
+ScanlineRenderer::Scratch _renderScratch;
 int _currentPatternIndex = 0;
 
 M5UnitRCA _rcaOutput;
@@ -61,6 +54,7 @@ void logBoardDiagnostics();
 void logMemoryDiagnostics(const char* stage);
 void displayError(const char* message);
 void reportError(const char* message);
+bool verifyRenderHeapUnchanged(size_t freeHeapBefore, const char* outputName);
 
 void initLcdDisplay();
 bool initRcaOutput();
@@ -72,15 +66,28 @@ void toggleVideoModeIfButtonPressed();
 void toggleVideoMode();
 void saveIsPalState(bool isPalMode);
 
-uint16_t* getPreviewImage(const uint16_t* imageData);
-bool displayPreview(const uint16_t* imageData);
-const uint16_t* getNtscRcaImage(const uint16_t* imageData);
-uint16_t* getPalRcaImage(const uint16_t* imageData);
-bool displayNtscRca(const uint16_t* imageData);
-bool displayPalRca(const uint16_t* imageData);
-bool displayRca(const uint16_t* imageData);
+bool decodeAssetRow(
+  const void* context,
+  int sourceRowIndex,
+  uint16_t destination[ImageScaler::SourceWidth]);
+void startPreviewWrite(void* context);
+bool writePreviewRow(
+  void* context,
+  int destinationRowIndex,
+  const uint16_t* rowPixels,
+  int pixelCount);
+void endPreviewWrite(void* context);
+void startRcaWrite(void* context);
+bool writeRcaRow(
+  void* context,
+  int destinationRowIndex,
+  const uint16_t* rowPixels,
+  int pixelCount);
+void endRcaWrite(void* context);
 
-void displayPattern(const uint16_t* imageData);
+bool displayPreview(const PatternAssets::Asset& asset);
+bool displayRca(const PatternAssets::Asset& asset);
+void displayPattern(const PatternAssets::Asset& asset, const char* patternName);
 void cyclePattern();
 void checkPatternButton();
 
@@ -209,11 +216,45 @@ void reportError(const char* message)
   displayError(message);
 }
 
+bool verifyRenderHeapUnchanged(size_t freeHeapBefore, const char* outputName)
+{
+  const size_t freeHeapAfter =
+    heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  const bool unchanged = freeHeapBefore == freeHeapAfter;
+
+  Serial.printf(
+    "[diag] render_heap output=%s before=%lu after=%lu result=%s\n",
+    outputName,
+    static_cast<unsigned long>(freeHeapBefore),
+    static_cast<unsigned long>(freeHeapAfter),
+    unchanged ? "stable" : "changed");
+
+  if (!unchanged)
+  {
+    reportError("Renderer heap changed");
+  }
+  return unchanged;
+}
+
 void initLcdDisplay()
 {
   M5.begin();
   M5.Display.setTextSize(2);
   M5.Display.setRotation(1);
+  M5.Display.clear();
+
+  // M5GFX retains a small bookkeeping allocation on its first typed image
+  // transfer. Perform that one-time initialization before per-pattern heap
+  // invariants are measured.
+  M5.Display.startWrite();
+  M5.Display.pushImage(
+    7,
+    7,
+    ImageScaler::PreviewWidth,
+    1,
+    reinterpret_cast<const lgfx::rgb565_t*>(
+      _renderScratch.destinationRow));
+  M5.Display.endWrite();
   M5.Display.clear();
 }
 
@@ -314,73 +355,157 @@ bool initRcaOutput()
   return true;
 }
 
-uint16_t* getPreviewImage(const uint16_t* imageData)
+bool decodeAssetRow(
+  const void* context,
+  int sourceRowIndex,
+  uint16_t destination[ImageScaler::SourceWidth])
 {
-  return ImageScaler::ScaleImage50Percent(imageData);
-}
-
-bool displayPreview(const uint16_t* imageData)
-{
-  if (!imageData)
+  if (context == nullptr
+      || sourceRowIndex < 0
+      || sourceRowIndex >= ImageScaler::SourceHeight)
   {
-    reportError("Preview source is null");
+    Serial.printf(
+      "[error] Pattern row request is invalid: row=%d\n",
+      sourceRowIndex);
     return false;
   }
 
-  uint16_t* previewImage = getPreviewImage(imageData);
+  const PatternAssets::Asset& asset =
+    *static_cast<const PatternAssets::Asset*>(context);
+  if (asset.width != ImageScaler::SourceWidth
+      || asset.height != ImageScaler::SourceHeight)
+  {
+    Serial.printf(
+      "[error] Pattern dimensions are invalid: actual=%ux%u expected=%dx%d\n",
+      static_cast<unsigned int>(asset.width),
+      static_cast<unsigned int>(asset.height),
+      ImageScaler::SourceWidth,
+      ImageScaler::SourceHeight);
+    return false;
+  }
+
+  const PatternDecodeResult result = decodePatternRow(
+    asset,
+    static_cast<uint16_t>(sourceRowIndex),
+    destination,
+    ImageScaler::SourceWidth);
+  if (result != PatternDecodeResult::Ok)
+  {
+    Serial.printf(
+      "[error] Pattern decode failed: row=%d result=%s\n",
+      sourceRowIndex,
+      patternDecodeResultMessage(result));
+    return false;
+  }
+  return true;
+}
+
+void startPreviewWrite(void*)
+{
+  M5.Display.startWrite();
+}
+
+bool writePreviewRow(
+  void*,
+  int destinationRowIndex,
+  const uint16_t* rowPixels,
+  int pixelCount)
+{
+  if (rowPixels == nullptr
+      || destinationRowIndex < 0
+      || destinationRowIndex >= ImageScaler::PreviewHeight
+      || pixelCount != ImageScaler::PreviewWidth)
+  {
+    return false;
+  }
+
+  M5.Display.pushImage(
+    7,
+    7 + destinationRowIndex,
+    ImageScaler::PreviewWidth,
+    1,
+    reinterpret_cast<const lgfx::rgb565_t*>(rowPixels));
+  return true;
+}
+
+void endPreviewWrite(void*)
+{
+  M5.Display.endWrite();
+}
+
+void startRcaWrite(void*)
+{
+  _rcaOutput.startWrite();
+}
+
+bool writeRcaRow(
+  void*,
+  int destinationRowIndex,
+  const uint16_t* rowPixels,
+  int pixelCount)
+{
+  const int expectedWidth =
+    _isPalMode ? ImageScaler::PalWidth : ImageScaler::SourceWidth;
+  const int expectedHeight =
+    _isPalMode ? ImageScaler::PalHeight : ImageScaler::SourceHeight;
+  if (rowPixels == nullptr
+      || destinationRowIndex < 0
+      || destinationRowIndex >= expectedHeight
+      || pixelCount != expectedWidth)
+  {
+    return false;
+  }
+
+  _rcaOutput.pushImage(
+    0,
+    destinationRowIndex,
+    expectedWidth,
+    1,
+    reinterpret_cast<const lgfx::rgb565_t*>(rowPixels));
+  return true;
+}
+
+void endRcaWrite(void*)
+{
+  _rcaOutput.endWrite();
+}
+
+bool displayPreview(const PatternAssets::Asset& asset)
+{
+  const ScanlineRenderer::RowProvider provider = {
+    &asset,
+    decodeAssetRow,
+  };
+  const ScanlineRenderer::RowSink sink = {
+    nullptr,
+    startPreviewWrite,
+    writePreviewRow,
+    endPreviewWrite,
+  };
 
   M5.Display.clear();
-  if (!previewImage)
+  const size_t freeHeapBefore =
+    heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  const bool rendered =
+    ScanlineRenderer::RenderPreview(provider, sink, _renderScratch);
+  const bool heapUnchanged =
+    verifyRenderHeapUnchanged(freeHeapBefore, "preview");
+
+  if (!rendered)
   {
-    reportError("Preview allocation failed");
+    reportError("Preview rendering failed");
     return false;
   }
 
-  M5.Display.pushImage(7, 7, ImageScaler::PreviewWidth, ImageScaler::PreviewHeight, (const lgfx::rgb565_t *)previewImage);
   M5.Display.drawString(_isPalMode ? "PAL" : "NTSC", 180, 30);
-
-  free(previewImage);
-  return true;
-}
-
-const uint16_t* getNtscRcaImage(const uint16_t* imageData)
-{
-  return imageData;
-}
-
-uint16_t* getPalRcaImage(const uint16_t* imageData)
-{
-  return ImageScaler::ScaleImageForPalBilinear(imageData);
-}
-
-bool displayNtscRca(const uint16_t* imageData)
-{
-  const uint16_t* ntscRcaImage = getNtscRcaImage(imageData);
-  if (!ntscRcaImage)
+  if (!heapUnchanged)
   {
-    reportError("NTSC render buffer is null");
     return false;
   }
-
-  _rcaOutput.pushImage(0, 0, ImageScaler::SourceWidth, ImageScaler::SourceHeight, (const lgfx::rgb565_t *)ntscRcaImage);
   return true;
 }
 
-bool displayPalRca(const uint16_t* imageData)
-{
-  uint16_t* palRcaImage = getPalRcaImage(imageData);
-  if (!palRcaImage)
-  {
-    reportError("PAL render allocation failed");
-    return false;
-  }
-
-  _rcaOutput.pushImage(0, 0, ImageScaler::PalWidth, ImageScaler::PalHeight, (const lgfx::rgb565_t *)palRcaImage);
-  free(palRcaImage);
-  return true;
-}
-
-bool displayRca(const uint16_t* imageData)
+bool displayRca(const PatternAssets::Asset& asset)
 {
   if (!_isRcaOutputReady)
   {
@@ -388,32 +513,54 @@ bool displayRca(const uint16_t* imageData)
     return false;
   }
 
-  if (!imageData)
-  {
-    reportError("RCA source is null");
-    return false;
-  }
+  const ScanlineRenderer::RowProvider provider = {
+    &asset,
+    decodeAssetRow,
+  };
+  const ScanlineRenderer::RowSink sink = {
+    nullptr,
+    startRcaWrite,
+    writeRcaRow,
+    endRcaWrite,
+  };
 
   _rcaOutput.clear();
+  const size_t freeHeapBefore =
+    heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  const bool rendered = _isPalMode
+    ? ScanlineRenderer::RenderPal(provider, sink, _renderScratch)
+    : ScanlineRenderer::RenderNtsc(provider, sink, _renderScratch);
+  const bool heapUnchanged = verifyRenderHeapUnchanged(
+    freeHeapBefore,
+    _isPalMode ? "PAL" : "NTSC");
 
-  if (_isPalMode)
+  if (!rendered)
   {
-    return displayPalRca(imageData);
+    reportError(_isPalMode
+      ? "PAL rendering failed"
+      : "NTSC rendering failed");
+    return false;
   }
-
-  return displayNtscRca(imageData);
+  return heapUnchanged;
 }
 
-void displayPattern(const uint16_t* imageData)
+void displayPattern(
+  const PatternAssets::Asset& asset,
+  const char* patternName)
 {
-  if (!imageData)
-  {
-    reportError("Pattern source is null");
-    return;
-  }
+  Serial.printf(
+    "[diag] pattern name=%s payload=%lu decoded_crc32=%08lx\n",
+    patternName,
+    static_cast<unsigned long>(asset.payloadSize),
+    static_cast<unsigned long>(asset.decodedCrc32));
 
-  displayPreview(imageData);
-  displayRca(imageData);
+  const bool previewRendered = displayPreview(asset);
+  const bool rcaRendered = displayRca(asset);
+  Serial.printf(
+    "[diag] pattern result=%s preview=%s rca=%s\n",
+    patternName,
+    previewRendered ? "success" : "failure",
+    rcaRendered ? "success" : "failure");
 }
 
 void saveIsPalState(bool isPalMode)
@@ -450,8 +597,11 @@ void toggleVideoModeIfButtonPressed()
 
 void cyclePattern()
 {
-  _currentPatternIndex = (_currentPatternIndex + 1) % PATTERN_COUNT;
-  displayPattern(PATTERNS[_currentPatternIndex]);
+  _currentPatternIndex =
+    (_currentPatternIndex + 1) % PatternAssets::kCount;
+  displayPattern(
+    *PatternAssets::kAll[_currentPatternIndex],
+    PatternAssets::kNames[_currentPatternIndex]);
 }
 
 void checkPatternButton()
@@ -480,7 +630,29 @@ void setup() {
   logMemoryDiagnostics("before RCA init");
   _isRcaOutputReady = initRcaOutput();
 
-  displayPattern(colour_bars_bmp);
+  displayPattern(*PatternAssets::kAll[0], PatternAssets::kNames[0]);
+
+#if PATTERN_SELF_TEST_CYCLES > 0
+  Serial.printf(
+    "[diag] pattern self-test begin cycles=%d patterns=%u\n",
+    PATTERN_SELF_TEST_CYCLES,
+    static_cast<unsigned int>(PatternAssets::kCount));
+  for (int cycleIndex = 0;
+       cycleIndex < PATTERN_SELF_TEST_CYCLES;
+       ++cycleIndex)
+  {
+    for (size_t patternIndex = 0;
+         patternIndex < PatternAssets::kCount;
+         ++patternIndex)
+    {
+      displayPattern(
+        *PatternAssets::kAll[patternIndex],
+        PatternAssets::kNames[patternIndex]);
+    }
+  }
+  logMemoryDiagnostics("after pattern self-test");
+  Serial.println("[diag] pattern self-test complete");
+#endif
 }
 
 void loop() {

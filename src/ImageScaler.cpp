@@ -1,7 +1,5 @@
 #include "ImageScaler.h"
 
-#include <stdlib.h>
-
 namespace {
 
 struct BilinearCoordinate {
@@ -41,18 +39,14 @@ BilinearCoordinate ComputeBilinearCoordinate(int destinationIndex, uint32_t fixe
 }
 
 BilinearNeighborPixels ReadBilinearNeighborPixels(
-    const uint16_t* sourceImageData,
-    const BilinearCoordinate& verticalCoordinate,
-    const BilinearCoordinate& horizontalCoordinate,
-    int sourceImageWidth) {
-  int topRowOffset = verticalCoordinate.lowerIndex * sourceImageWidth;
-  int bottomRowOffset = verticalCoordinate.upperIndex * sourceImageWidth;
-
+    const uint16_t* topSourceRow,
+    const uint16_t* bottomSourceRow,
+    const BilinearCoordinate& horizontalCoordinate) {
   return {
-      sourceImageData[topRowOffset + horizontalCoordinate.lowerIndex],
-      sourceImageData[topRowOffset + horizontalCoordinate.upperIndex],
-      sourceImageData[bottomRowOffset + horizontalCoordinate.lowerIndex],
-      sourceImageData[bottomRowOffset + horizontalCoordinate.upperIndex],
+      topSourceRow[horizontalCoordinate.lowerIndex],
+      topSourceRow[horizontalCoordinate.upperIndex],
+      bottomSourceRow[horizontalCoordinate.lowerIndex],
+      bottomSourceRow[horizontalCoordinate.upperIndex],
   };
 }
 
@@ -97,12 +91,15 @@ uint16_t PackRgb565Pixel(uint32_t redValue, uint32_t greenValue, uint32_t blueVa
 }
 
 uint16_t ComputeBilinearScaledPixel(
-    const uint16_t* sourceImageData,
+    const uint16_t* topSourceRow,
+    const uint16_t* bottomSourceRow,
     const BilinearCoordinate& verticalCoordinate,
-    const BilinearCoordinate& horizontalCoordinate,
-    int sourceImageWidth) {
+    const BilinearCoordinate& horizontalCoordinate) {
   BilinearNeighborPixels neighborPixels =
-      ReadBilinearNeighborPixels(sourceImageData, verticalCoordinate, horizontalCoordinate, sourceImageWidth);
+      ReadBilinearNeighborPixels(
+          topSourceRow,
+          bottomSourceRow,
+          horizontalCoordinate);
 
   Rgb565Channels topLeftChannels = ExpandRgb565Channels(neighborPixels.topLeft);
   Rgb565Channels topRightChannels = ExpandRgb565Channels(neighborPixels.topRight);
@@ -149,40 +146,57 @@ uint16_t ComputeBilinearScaledPixel(
 
 } 
 
-uint16_t* ImageScaler::ScaleImage50Percent(const uint16_t* imageData) {
-  uint16_t* scaleImg = (uint16_t*)malloc(PreviewWidth * PreviewHeight * sizeof(uint16_t));
-  if (!scaleImg) {
-    return nullptr;
+void ImageScaler::ScalePreviewRow(
+    const uint16_t sourceRow[SourceWidth],
+    uint16_t destinationRow[PreviewWidth]) {
+  for (int destinationColumnIndex = 0;
+       destinationColumnIndex < PreviewWidth;
+       ++destinationColumnIndex) {
+    destinationRow[destinationColumnIndex] =
+        sourceRow[destinationColumnIndex * 2];
   }
-
-  size_t dtnPixelIndex = 0;
-  for (int srcRowIndex = 0; srcRowIndex < SourceHeight; srcRowIndex += 2) {
-    for (int srcColIndex = 0; srcColIndex < SourceWidth; srcColIndex += 2) {
-      scaleImg[dtnPixelIndex++] = imageData[srcRowIndex * SourceWidth + srcColIndex];
-    }
-  }
-
-  return scaleImg;
 }
 
-uint16_t* ImageScaler::ScaleImageForPalBilinear(const uint16_t* imageData) {
-  uint16_t* scaleImg = (uint16_t*)malloc(PalWidth * PalHeight * sizeof(uint16_t));
-  if (!scaleImg) {
-    return nullptr;
+ImageScaler::SourceRowPair ImageScaler::GetPalSourceRows(
+    int destinationRowIndex) {
+  const uint32_t verticalScaleFactor =
+      ComputeFixedPointScale(SourceHeight, PalHeight);
+  const BilinearCoordinate verticalCoordinate =
+      ComputeBilinearCoordinate(
+          destinationRowIndex,
+          verticalScaleFactor,
+          SourceHeight);
+  return {verticalCoordinate.lowerIndex, verticalCoordinate.upperIndex};
+}
+
+void ImageScaler::ScalePalRowBilinear(
+    const uint16_t topSourceRow[SourceWidth],
+    const uint16_t bottomSourceRow[SourceWidth],
+    int destinationRowIndex,
+    uint16_t destinationRow[PalWidth]) {
+  const uint32_t horizontalScaleFactor =
+      ComputeFixedPointScale(SourceWidth, PalWidth);
+  const uint32_t verticalScaleFactor =
+      ComputeFixedPointScale(SourceHeight, PalHeight);
+  const BilinearCoordinate verticalCoordinate =
+      ComputeBilinearCoordinate(
+          destinationRowIndex,
+          verticalScaleFactor,
+          SourceHeight);
+
+  for (int destinationColumnIndex = 0;
+       destinationColumnIndex < PalWidth;
+       ++destinationColumnIndex) {
+    const BilinearCoordinate horizontalCoordinate =
+        ComputeBilinearCoordinate(
+            destinationColumnIndex,
+            horizontalScaleFactor,
+            SourceWidth);
+    destinationRow[destinationColumnIndex] =
+        ComputeBilinearScaledPixel(
+            topSourceRow,
+            bottomSourceRow,
+            verticalCoordinate,
+            horizontalCoordinate);
   }
-
-  uint32_t horScaleFactor = ComputeFixedPointScale(SourceWidth, PalWidth);
-  uint32_t verScaleFactor = ComputeFixedPointScale(SourceHeight, PalHeight);
-
-  for (int dtnRowIndex = 0; dtnRowIndex < PalHeight; ++dtnRowIndex) {
-    BilinearCoordinate verCoord = ComputeBilinearCoordinate(dtnRowIndex, verScaleFactor, SourceHeight);
-
-    for (int dtnColIndex = 0; dtnColIndex < PalWidth; ++dtnColIndex) {
-      BilinearCoordinate horCoord = ComputeBilinearCoordinate(dtnColIndex, horScaleFactor, SourceWidth);
-
-      scaleImg[dtnRowIndex * PalWidth + dtnColIndex] = ComputeBilinearScaledPixel(imageData, verCoord, horCoord, SourceWidth);
-    }
-  }
-
-  return scaleImg;
 }
