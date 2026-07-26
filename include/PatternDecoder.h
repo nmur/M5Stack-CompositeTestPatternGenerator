@@ -30,5 +30,3 @@ PatternDecodeResult decodePatternRow(
     uint16_t* destination,
     size_t destinationPixels
 );
-
-const char* patternDecodeResultMessage(PatternDecodeResult result);

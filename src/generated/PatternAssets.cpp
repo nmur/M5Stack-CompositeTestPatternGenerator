@@ -604,7 +604,6 @@ const Asset kColourBars = {
     3,
     44,
     316,
-    0x982db9d4,
     kColourBarsPalette,
     kColourBarsRowOffsets,
     kColourBarsRowData,
@@ -620,7 +619,6 @@ const Asset kGrid = {
     6,
     506,
     766,
-    0x67c3e5ba,
     kGridPalette,
     kGridRowOffsets,
     kGridRowData,
@@ -636,7 +634,6 @@ const Asset kCircles = {
     146,
     3188,
     3726,
-    0x3a736d4e,
     kCirclesPalette,
     kCirclesRowOffsets,
     kCirclesRowData,
@@ -652,7 +649,6 @@ const Asset kGradients = {
     39,
     3401,
     3975,
-    0x6d0a8648,
     kGradientsPalette,
     kGradientsRowOffsets,
     kGradientsRowData,
@@ -668,7 +664,6 @@ const Asset kWhite = {
     0,
     0,
     2,
-    0x90bb2232,
     kWhitePalette,
     nullptr,
     nullptr,
@@ -684,7 +679,6 @@ const Asset kRed = {
     0,
     0,
     2,
-    0x3cde665d,
     kRedPalette,
     nullptr,
     nullptr,
@@ -700,7 +694,6 @@ const Asset kGreen = {
     0,
     0,
     2,
-    0x6a5ba2e0,
     kGreenPalette,
     nullptr,
     nullptr,
@@ -716,7 +709,6 @@ const Asset kBlue = {
     0,
     0,
     2,
-    0xc63ee68f,
     kBluePalette,
     nullptr,
     nullptr,
@@ -725,10 +717,6 @@ const Asset kBlue = {
 
 const Asset* const kAll[kCount] = {
     &kColourBars, &kGrid, &kCircles, &kGradients, &kWhite, &kRed, &kGreen, &kBlue,
-};
-
-const char* const kNames[kCount] = {
-    "colour_bars", "grid", "circles", "gradients", "white", "red", "green", "blue",
 };
 
 }  // namespace PatternAssets

@@ -22,7 +22,6 @@ struct Asset {
     uint16_t uniqueRowCount;
     uint32_t rowDataSize;
     uint32_t payloadSize;
-    uint32_t decodedCrc32;
     const uint16_t* palette;
     const uint16_t* rowOffsets;
     const uint8_t* rowData;
@@ -40,6 +39,5 @@ extern const Asset kBlue;
 
 constexpr size_t kCount = 8;
 extern const Asset* const kAll[kCount];
-extern const char* const kNames[kCount];
 
 }  // namespace PatternAssets

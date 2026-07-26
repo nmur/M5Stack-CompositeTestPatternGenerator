@@ -48,8 +48,6 @@ public:
 
   static constexpr size_t ScratchBytes = sizeof(Scratch);
 
-  static RowProvider RawRgb565Provider(const uint16_t* imageData);
-
   static bool RenderNtsc(
       const RowProvider& provider,
       const RowSink& sink,
@@ -62,12 +60,6 @@ public:
       const RowProvider& provider,
       const RowSink& sink,
       Scratch& scratch);
-
-private:
-  static bool DecodeRawRgb565Row(
-      const void* context,
-      int sourceRowIndex,
-      uint16_t destination[ImageScaler::SourceWidth]);
 };
 
 static_assert(

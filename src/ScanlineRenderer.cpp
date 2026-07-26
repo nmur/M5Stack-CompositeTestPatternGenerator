@@ -1,7 +1,5 @@
 #include "ScanlineRenderer.h"
 
-#include <string.h>
-
 namespace {
 
 bool IsValid(
@@ -33,30 +31,6 @@ int FindCachedRow(const int cachedRows[2], int sourceRowIndex) {
 }
 
 }  // namespace
-
-ScanlineRenderer::RowProvider ScanlineRenderer::RawRgb565Provider(
-    const uint16_t* imageData) {
-  return {imageData, DecodeRawRgb565Row};
-}
-
-bool ScanlineRenderer::DecodeRawRgb565Row(
-    const void* context,
-    int sourceRowIndex,
-    uint16_t destination[ImageScaler::SourceWidth]) {
-  if (context == nullptr
-      || destination == nullptr
-      || sourceRowIndex < 0
-      || sourceRowIndex >= ImageScaler::SourceHeight) {
-    return false;
-  }
-
-  const uint16_t* imageData = static_cast<const uint16_t*>(context);
-  memcpy(
-      destination,
-      imageData + sourceRowIndex * ImageScaler::SourceWidth,
-      ImageScaler::SourceWidth * sizeof(uint16_t));
-  return true;
-}
 
 bool ScanlineRenderer::RenderNtsc(
     const RowProvider& provider,

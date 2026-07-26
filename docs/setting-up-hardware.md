@@ -1,10 +1,17 @@
 # Setting up the Hardware
 
-You will need to obtain a [M5StickC PLUS2 ESP32 controller](https://shop.m5stack.com/products/m5stickc-plus2-esp32-mini-iot-development-kit) from M5Stack directly, or one of their [distributors](https://m5stack.com/distributor).
+You need an original ESP32-based M5StickC Plus-family controller and a
+composite adapter connected to GPIO26. See the
+[compatibility table](../README.md#device-compatibility) before choosing a
+controller.
 
-Unfortunately the RCA adapter hat shown in the photos is not available from M5Stack, it's a small custom PCB housed in a [M5StickC Proto Hat](https://shop.m5stack.com/products/m5stickc-proto-hat), and requires the PCB to be printed as well as some DIY soldering.
+The RCA adapter hat shown in the photos is not available from M5Stack. It is a
+small custom PCB housed in a
+[M5StickC Proto Hat](https://shop.m5stack.com/products/m5stickc-proto-hat), and
+requires the PCB to be manufactured and assembled.
 
-You can still assemble compatible hardware with all off-the-shelf parts from M5Stack, it will just be less elegant than the aforementioned option.
+You can also assemble a compatible adapter from off-the-shelf M5Stack
+components.
 
 ## Custom DIY RCA PCB Hat
  
@@ -46,4 +53,3 @@ Connect the components as follow:
 | White | G36/G25 |
 
 <img width="793" height="432" alt="image" src="https://github.com/user-attachments/assets/6c093d8e-ce4f-4245-ad60-72ccfc16c3c3" />
-
