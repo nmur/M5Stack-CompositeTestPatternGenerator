@@ -4,39 +4,27 @@
 #include <M5ModuleRCA.h>
 #include <M5UnitRCA.h>
 #include <Preferences.h>
-#include <stdlib.h>
+#include <esp_heap_caps.h>
 
 #include "ImageScaler.h"
-#include "colour_bars.h"   
-#include "grid.h"   
-#include "circles.h"
-#include "gradients.h"
-#include "white.h"
-// Not enough memory to include all patterns as raw bmp arrays for now
-// #include "red.h"
-// #include "green.h"
-// #include "blue.h"
+#include "PatternDecoder.h"
+#include "ScanlineRenderer.h"
+#include "generated/PatternAssets.h"
 
 Preferences _preferences;
 
 const int VIDEO_MODE_BUTTON_PIN = 39; // Button B
 const int PATTERN_BUTTON_PIN = 37; // Button A
+const bool DEFAULT_IS_PAL_MODE = true;
 
 bool _videoModeLastButtonState = HIGH;     
 bool _patternLastButtonState = HIGH;
 bool _isPalMode = false;
+bool _isRcaOutputReady = false;
 
-const uint16_t* PATTERNS[] = {
-  colour_bars_bmp, 
-  grid_bmp, 
-  circles_bmp,
-  gradients_bmp,
-  white_bmp,
-  // red_bmp,
-  // green_bmp,
-  // blue_bmp
-};
-const int PATTERN_COUNT = 5;
+static_assert(PatternAssets::kCount == 8, "All eight test patterns must be enabled");
+
+ScanlineRenderer::Scratch _renderScratch;
 int _currentPatternIndex = 0;
 
 M5UnitRCA _rcaOutput;
@@ -44,8 +32,11 @@ M5UnitRCA _rcaOutput;
 M5UnitRCA GetPalRcaConfig();
 M5UnitRCA GetNtscRcaConfig();
 
+void displayError(const char* message);
+void reportError(const char* message);
+
 void initLcdDisplay();
-void initRcaOutput();
+bool initRcaOutput();
 void loadVideoModeState();
 void setRcaOutputVideoMode();
 
@@ -54,15 +45,28 @@ void toggleVideoModeIfButtonPressed();
 void toggleVideoMode();
 void saveIsPalState(bool isPalMode);
 
-uint16_t* getPreviewImage(const uint16_t* imageData);
-void displayPreview(const uint16_t* imageData);
-const uint16_t* getNtscRcaImage(const uint16_t* imageData);
-uint16_t* getPalRcaImage(const uint16_t* imageData);
-void displayNtscRca(const uint16_t* imageData);
-void displayPalRca(const uint16_t* imageData);
-void displayRca(const uint16_t* imageData);
+bool decodeAssetRow(
+  const void* context,
+  int sourceRowIndex,
+  uint16_t destination[ImageScaler::SourceWidth]);
+void startPreviewWrite(void* context);
+bool writePreviewRow(
+  void* context,
+  int destinationRowIndex,
+  const uint16_t* rowPixels,
+  int pixelCount);
+void endPreviewWrite(void* context);
+void startRcaWrite(void* context);
+bool writeRcaRow(
+  void* context,
+  int destinationRowIndex,
+  const uint16_t* rowPixels,
+  int pixelCount);
+void endRcaWrite(void* context);
 
-void displayPattern(const uint16_t* imageData);
+bool displayPreview(const PatternAssets::Asset& asset);
+bool displayRca(const PatternAssets::Asset& asset);
+void displayPattern(const PatternAssets::Asset& asset);
 void cyclePattern();
 void checkPatternButton();
 
@@ -71,7 +75,7 @@ M5UnitRCA GetPalRcaConfig()
   return M5UnitRCA(384, 288,
                    384, 288,
                    M5UnitRCA::signal_type_t::PAL, 
-                   M5UnitRCA::use_psram_t::psram_use,
+                   M5UnitRCA::use_psram_t::psram_no_use,
                    26, 
                    128);
 }
@@ -81,9 +85,25 @@ M5UnitRCA GetNtscRcaConfig()
   return M5UnitRCA(320, 240,
                    320, 240,
                    M5UnitRCA::signal_type_t::NTSC, 
-                   M5UnitRCA::use_psram_t::psram_use,
+                   M5UnitRCA::use_psram_t::psram_no_use,
                    26, 
                    128);
+}
+
+void displayError(const char* message)
+{
+  M5.Display.fillRect(0, 99, M5.Display.width(), 36, TFT_BLACK);
+  M5.Display.setTextSize(1);
+  M5.Display.setTextColor(TFT_RED, TFT_BLACK);
+  M5.Display.drawString("ERROR", 2, 101);
+  M5.Display.drawString(message, 2, 114);
+  M5.Display.setTextColor(TFT_WHITE, TFT_BLACK);
+  M5.Display.setTextSize(2);
+}
+
+void reportError(const char* message)
+{
+  displayError(message);
 }
 
 void initLcdDisplay()
@@ -97,7 +117,7 @@ void initLcdDisplay()
 void loadVideoModeState()
 {
   _preferences.begin("video", false);
-  _isPalMode = _preferences.getBool("isPal", true);
+  _isPalMode = _preferences.getBool("isPal", DEFAULT_IS_PAL_MODE);
   _preferences.end();
 }
 
@@ -113,75 +133,222 @@ void setRcaOutputVideoMode()
   }
 }
 
-void initRcaOutput()
+bool initRcaOutput()
 {
   loadVideoModeState();
   setRcaOutputVideoMode();
 
-  _rcaOutput.setOutputBoost(true);
-  _rcaOutput.init();
+  const int expectedWidth =
+    _isPalMode ? ImageScaler::PalWidth : ImageScaler::SourceWidth;
+  const int expectedHeight =
+    _isPalMode ? ImageScaler::PalHeight : ImageScaler::SourceHeight;
+  const size_t expectedFramebufferBytes =
+    static_cast<size_t>(expectedWidth) * expectedHeight * sizeof(uint16_t);
+  const size_t freeDmaBefore =
+    heap_caps_get_free_size(MALLOC_CAP_DMA);
+
+  const bool initSucceeded = _rcaOutput.init();
+
+  if (!initSucceeded)
+  {
+    reportError("RCA initialization failed");
+    return false;
+  }
+
+  // M5UnitRCA first creates an RGB332 framebuffer. Changing its depth
+  // recreates the framebuffer as RGB565, but the library does not return the
+  // second allocation result. Check the resulting internal-RAM consumption
+  // before rendering so a failed recreation cannot be used.
   _rcaOutput.setColorDepth(m5gfx::color_depth_t::rgb565_nonswapped);
+
+  const size_t freeDmaAfter =
+    heap_caps_get_free_size(MALLOC_CAP_DMA);
+  const size_t observedDmaAllocation =
+    freeDmaBefore >= freeDmaAfter ? freeDmaBefore - freeDmaAfter : 0;
+  const int colorDepthBits =
+    static_cast<int>(_rcaOutput.getColorDepth())
+    & static_cast<int>(m5gfx::color_depth_t::bit_mask);
+  const bool dimensionsMatch =
+    _rcaOutput.width() == expectedWidth
+    && _rcaOutput.height() == expectedHeight;
+  const bool colorDepthMatches = colorDepthBits == 16;
+  const bool framebufferAllocationObserved =
+    observedDmaAllocation >= expectedFramebufferBytes;
+
+  if (!dimensionsMatch
+      || !colorDepthMatches
+      || !framebufferAllocationObserved)
+  {
+    reportError("RCA framebuffer failed");
+    return false;
+  }
+
+  return true;
 }
 
-uint16_t* getPreviewImage(const uint16_t* imageData)
+bool decodeAssetRow(
+  const void* context,
+  int sourceRowIndex,
+  uint16_t destination[ImageScaler::SourceWidth])
 {
-  return ImageScaler::ScaleImage50Percent(imageData);
+  if (context == nullptr
+      || sourceRowIndex < 0
+      || sourceRowIndex >= ImageScaler::SourceHeight)
+  {
+    return false;
+  }
+
+  const PatternAssets::Asset& asset =
+    *static_cast<const PatternAssets::Asset*>(context);
+  if (asset.width != ImageScaler::SourceWidth
+      || asset.height != ImageScaler::SourceHeight)
+  {
+    return false;
+  }
+
+  return decodePatternRow(
+      asset,
+      static_cast<uint16_t>(sourceRowIndex),
+      destination,
+      ImageScaler::SourceWidth)
+    == PatternDecodeResult::Ok;
 }
 
-void displayPreview(const uint16_t* imageData)
+void startPreviewWrite(void*)
 {
-  uint16_t* previewImage = getPreviewImage(imageData);
+  M5.Display.startWrite();
+}
+
+bool writePreviewRow(
+  void*,
+  int destinationRowIndex,
+  const uint16_t* rowPixels,
+  int pixelCount)
+{
+  if (rowPixels == nullptr
+      || destinationRowIndex < 0
+      || destinationRowIndex >= ImageScaler::PreviewHeight
+      || pixelCount != ImageScaler::PreviewWidth)
+  {
+    return false;
+  }
+
+  M5.Display.pushImage(
+    7,
+    7 + destinationRowIndex,
+    ImageScaler::PreviewWidth,
+    1,
+    reinterpret_cast<const lgfx::rgb565_t*>(rowPixels));
+  return true;
+}
+
+void endPreviewWrite(void*)
+{
+  M5.Display.endWrite();
+}
+
+void startRcaWrite(void*)
+{
+  _rcaOutput.startWrite();
+}
+
+bool writeRcaRow(
+  void*,
+  int destinationRowIndex,
+  const uint16_t* rowPixels,
+  int pixelCount)
+{
+  const int expectedWidth =
+    _isPalMode ? ImageScaler::PalWidth : ImageScaler::SourceWidth;
+  const int expectedHeight =
+    _isPalMode ? ImageScaler::PalHeight : ImageScaler::SourceHeight;
+  if (rowPixels == nullptr
+      || destinationRowIndex < 0
+      || destinationRowIndex >= expectedHeight
+      || pixelCount != expectedWidth)
+  {
+    return false;
+  }
+
+  _rcaOutput.pushImage(
+    0,
+    destinationRowIndex,
+    expectedWidth,
+    1,
+    reinterpret_cast<const lgfx::rgb565_t*>(rowPixels));
+  return true;
+}
+
+void endRcaWrite(void*)
+{
+  _rcaOutput.endWrite();
+}
+
+bool displayPreview(const PatternAssets::Asset& asset)
+{
+  const ScanlineRenderer::RowProvider provider = {
+    &asset,
+    decodeAssetRow,
+  };
+  const ScanlineRenderer::RowSink sink = {
+    nullptr,
+    startPreviewWrite,
+    writePreviewRow,
+    endPreviewWrite,
+  };
 
   M5.Display.clear();
-  if (previewImage)
+  const bool rendered =
+    ScanlineRenderer::RenderPreview(provider, sink, _renderScratch);
+
+  if (!rendered)
   {
-    M5.Display.pushImage(7, 7, ImageScaler::PreviewWidth, ImageScaler::PreviewHeight, (const lgfx::rgb565_t *)previewImage);
+    reportError("Preview rendering failed");
+    return false;
   }
+
   M5.Display.drawString(_isPalMode ? "PAL" : "NTSC", 180, 30);
-
-  free(previewImage);
+  return true;
 }
 
-const uint16_t* getNtscRcaImage(const uint16_t* imageData)
+bool displayRca(const PatternAssets::Asset& asset)
 {
-  return imageData;
-}
+  if (!_isRcaOutputReady)
+  {
+    reportError("RCA output unavailable");
+    return false;
+  }
 
-uint16_t* getPalRcaImage(const uint16_t* imageData)
-{
-  return ImageScaler::ScaleImageForPalBilinear(imageData);
-}
+  const ScanlineRenderer::RowProvider provider = {
+    &asset,
+    decodeAssetRow,
+  };
+  const ScanlineRenderer::RowSink sink = {
+    nullptr,
+    startRcaWrite,
+    writeRcaRow,
+    endRcaWrite,
+  };
 
-void displayNtscRca(const uint16_t* imageData)
-{
-  const uint16_t* ntscRcaImage = getNtscRcaImage(imageData);
-  _rcaOutput.pushImage(0, 0, ImageScaler::SourceWidth, ImageScaler::SourceHeight, (const lgfx::rgb565_t *)ntscRcaImage);
-}
-
-void displayPalRca(const uint16_t* imageData)
-{
-  const uint16_t* palRcaImage = getPalRcaImage(imageData);
-  _rcaOutput.pushImage(0, 0, ImageScaler::PalWidth, ImageScaler::PalHeight, (const lgfx::rgb565_t *)palRcaImage);
-}
-
-void displayRca(const uint16_t* imageData)
-{
   _rcaOutput.clear();
+  const bool rendered = _isPalMode
+    ? ScanlineRenderer::RenderPal(provider, sink, _renderScratch)
+    : ScanlineRenderer::RenderNtsc(provider, sink, _renderScratch);
 
-  if (_isPalMode)
+  if (!rendered)
   {
-    displayPalRca(imageData);
+    reportError(_isPalMode
+      ? "PAL rendering failed"
+      : "NTSC rendering failed");
+    return false;
   }
-  else
-  {
-    displayNtscRca(imageData);
-  }
+  return true;
 }
 
-void displayPattern(const uint16_t* imageData)
+void displayPattern(const PatternAssets::Asset& asset)
 {
-  displayPreview(imageData);
-  displayRca(imageData);
+  displayPreview(asset);
+  displayRca(asset);
 }
 
 void saveIsPalState(bool isPalMode)
@@ -218,8 +385,9 @@ void toggleVideoModeIfButtonPressed()
 
 void cyclePattern()
 {
-  _currentPatternIndex = (_currentPatternIndex + 1) % PATTERN_COUNT;
-  displayPattern(PATTERNS[_currentPatternIndex]);
+  _currentPatternIndex =
+    (_currentPatternIndex + 1) % PatternAssets::kCount;
+  displayPattern(*PatternAssets::kAll[_currentPatternIndex]);
 }
 
 void checkPatternButton()
@@ -242,9 +410,9 @@ void setup() {
   pinMode(PATTERN_BUTTON_PIN, INPUT_PULLUP);
 
   initLcdDisplay();
-  initRcaOutput();
+  _isRcaOutputReady = initRcaOutput();
 
-  displayPattern(colour_bars_bmp);
+  displayPattern(*PatternAssets::kAll[0]);
 }
 
 void loop() {
