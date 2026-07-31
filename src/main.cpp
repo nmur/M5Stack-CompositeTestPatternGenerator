@@ -16,27 +16,36 @@ Preferences _preferences;
 const int VIDEO_MODE_BUTTON_PIN = 39; // Button B
 const int PATTERN_BUTTON_PIN = 37; // Button A
 const bool DEFAULT_IS_PAL_MODE = true;
-const bool SCROLLING_GRID_IS_PAL_MODE = false;
-const uint16_t RGB565_RED = 0xf800;
-const uint16_t RGB565_WHITE = 0xffff;
+const uint32_t PATTERN_BUTTON_DEBOUNCE_MS = 30;
+const uint32_t PATTERN_BUTTON_LONG_PRESS_MS = 750;
+const int STATIC_PATTERN_COUNT = 8;
 
 bool _videoModeLastButtonState = HIGH;     
-bool _patternLastButtonState = HIGH;
+bool _patternButtonLastRawState = HIGH;
+bool _patternButtonStableState = HIGH;
+bool _patternButtonLongPressHandled = false;
+uint32_t _patternButtonLastRawChangeMs = 0;
+uint32_t _patternButtonPressedMs = 0;
 bool _isPalMode = false;
 bool _isRcaOutputReady = false;
 
-static_assert(PatternAssets::kCount == 8, "All eight test patterns must be enabled");
+static_assert(
+  PatternAssets::kCount == STATIC_PATTERN_COUNT + 1,
+  "Eight static patterns and the scrolling grid must be enabled");
+
+enum class ScrollDirection : uint8_t
+{
+  Vertical,
+  Horizontal,
+};
 
 ScanlineRenderer::Scratch _renderScratch;
 int _currentPatternIndex = 0;
 
-// The scrolling grid shares the existing grid's compressed row data, but has
-// its own palette so the outer red border is white. This preserves the static
-// red-bordered grid for later integration without duplicating its payload.
-PatternAssets::Asset _scrollingGridAsset;
-uint16_t _scrollingGridPalette[3];
+lgfx::rgb565_t _scrollWrapPixels[ImageScaler::PalWidth];
+bool _isScrollingMode = false;
 bool _isScrollingGridReady = false;
-int _nextScrollingGridRow = 0;
+ScrollDirection _scrollDirection = ScrollDirection::Vertical;
 int32_t _lastRcaScanLine = -1;
 
 M5UnitRCA _rcaOutput;
@@ -79,11 +88,14 @@ void endRcaWrite(void* context);
 bool displayPreview(const PatternAssets::Asset& asset);
 bool displayRca(const PatternAssets::Asset& asset);
 void displayPattern(const PatternAssets::Asset& asset);
-bool prepareScrollingGrid();
 void startScrollingGrid();
+void stopScrollingGrid();
+void toggleScrollingGrid();
+void toggleScrollDirection();
 void scrollGridOneRefresh();
 void updateScrollingGrid();
 void cyclePattern();
+void handlePatternShortPress();
 void checkPatternButton();
 
 M5UnitRCA GetPalRcaConfig()
@@ -151,9 +163,7 @@ void setRcaOutputVideoMode()
 
 bool initRcaOutput()
 {
-  // The first scrolling implementation is deliberately NTSC-only. Ignore the
-  // saved user preference until scrolling is integrated with the normal UI.
-  _isPalMode = SCROLLING_GRID_IS_PAL_MODE;
+  loadVideoModeState();
   setRcaOutputVideoMode();
 
   const int expectedWidth =
@@ -369,59 +379,13 @@ void displayPattern(const PatternAssets::Asset& asset)
   displayRca(asset);
 }
 
-bool prepareScrollingGrid()
-{
-  const PatternAssets::Asset& source = PatternAssets::kGrid;
-  if (source.palette == nullptr
-      || source.paletteSize != 3
-      || source.paletteSize > sizeof(_scrollingGridPalette)
-          / sizeof(_scrollingGridPalette[0]))
-  {
-    reportError("Grid palette invalid");
-    return false;
-  }
-
-  bool replacedRed = false;
-  for (uint16_t index = 0; index < source.paletteSize; ++index)
-  {
-    const uint16_t colour = source.palette[index];
-    _scrollingGridPalette[index] =
-      colour == RGB565_RED ? RGB565_WHITE : colour;
-    replacedRed = replacedRed || colour == RGB565_RED;
-  }
-  if (!replacedRed)
-  {
-    reportError("Grid border colour missing");
-    return false;
-  }
-
-  _scrollingGridAsset = source;
-  _scrollingGridAsset.palette = _scrollingGridPalette;
-  return true;
-}
-
 void startScrollingGrid()
 {
-  if (!prepareScrollingGrid())
-  {
-    return;
-  }
-
-  displayPattern(_scrollingGridAsset);
+  _isScrollingMode = true;
+  _scrollDirection = ScrollDirection::Vertical;
+  displayPattern(PatternAssets::kScrollingGrid);
   if (!_isRcaOutputReady)
   {
-    return;
-  }
-
-  // Decode the row that will wrap onto the bottom before the refresh arrives,
-  // leaving only the framebuffer move and one row write in the VBlank window.
-  _nextScrollingGridRow = 0;
-  if (!decodeAssetRow(
-        &_scrollingGridAsset,
-        _nextScrollingGridRow,
-        _renderScratch.sourceRows[0]))
-  {
-    reportError("Scrolling row decode failed");
     return;
   }
 
@@ -433,27 +397,49 @@ void startScrollingGrid()
   }
 }
 
+void stopScrollingGrid()
+{
+  _isScrollingMode = false;
+  _isScrollingGridReady = false;
+  displayPattern(*PatternAssets::kAll[_currentPatternIndex]);
+}
+
+void toggleScrollingGrid()
+{
+  if (_isScrollingMode)
+  {
+    stopScrollingGrid();
+  }
+  else
+  {
+    startScrollingGrid();
+  }
+}
+
+void toggleScrollDirection()
+{
+  _scrollDirection = _scrollDirection == ScrollDirection::Vertical
+    ? ScrollDirection::Horizontal
+    : ScrollDirection::Vertical;
+}
+
 void scrollGridOneRefresh()
 {
-  // Move the image upward by one pixel and wrap its old top row to the bottom.
-  _rcaOutput.scroll(0, -1);
-  _rcaOutput.pushImage(
-    0,
-    ImageScaler::SourceHeight - 1,
-    ImageScaler::SourceWidth,
-    1,
-    reinterpret_cast<const lgfx::rgb565_t*>(
-      _renderScratch.sourceRows[0]));
-
-  _nextScrollingGridRow =
-    (_nextScrollingGridRow + 1) % ImageScaler::SourceHeight;
-  if (!decodeAssetRow(
-        &_scrollingGridAsset,
-        _nextScrollingGridRow,
-        _renderScratch.sourceRows[0]))
+  const int width = _rcaOutput.width();
+  const int height = _rcaOutput.height();
+  if (_scrollDirection == ScrollDirection::Vertical)
   {
-    _isScrollingGridReady = false;
-    reportError("Scrolling row decode failed");
+    // Capture the outgoing row so the image wraps without a seam.
+    _rcaOutput.readRect(0, 0, width, 1, _scrollWrapPixels);
+    _rcaOutput.scroll(0, -1);
+    _rcaOutput.pushImage(0, height - 1, width, 1, _scrollWrapPixels);
+  }
+  else
+  {
+    // The PAL height (288) also fits in the 384-pixel wrap buffer.
+    _rcaOutput.readRect(0, 0, 1, height, _scrollWrapPixels);
+    _rcaOutput.scroll(-1, 0);
+    _rcaOutput.pushImage(width - 1, 0, 1, height, _scrollWrapPixels);
   }
 }
 
@@ -472,7 +458,7 @@ void updateScrollingGrid()
     return;
   }
 
-  // Panel_CVBS resets its scanline counter at every NTSC display refresh.
+  // Panel_CVBS resets its scanline counter at every PAL or NTSC refresh.
   if (scanLine < _lastRcaScanLine)
   {
     scrollGridOneRefresh();
@@ -515,33 +501,70 @@ void toggleVideoModeIfButtonPressed()
 void cyclePattern()
 {
   _currentPatternIndex =
-    (_currentPatternIndex + 1) % PatternAssets::kCount;
+    (_currentPatternIndex + 1) % STATIC_PATTERN_COUNT;
   displayPattern(*PatternAssets::kAll[_currentPatternIndex]);
+}
+
+void handlePatternShortPress()
+{
+  if (_isScrollingMode)
+  {
+    toggleScrollDirection();
+  }
+  else
+  {
+    cyclePattern();
+  }
 }
 
 void checkPatternButton()
 {
-  bool currentButtonState = digitalRead(PATTERN_BUTTON_PIN);
+  const uint32_t now = millis();
+  const bool rawState = digitalRead(PATTERN_BUTTON_PIN);
 
-  if (currentButtonState == LOW && _patternLastButtonState == HIGH)
+  if (rawState != _patternButtonLastRawState)
   {
-    delay(50);  
-    if (digitalRead(PATTERN_BUTTON_PIN) == LOW)
+    _patternButtonLastRawState = rawState;
+    _patternButtonLastRawChangeMs = now;
+  }
+
+  if (now - _patternButtonLastRawChangeMs >= PATTERN_BUTTON_DEBOUNCE_MS
+      && rawState != _patternButtonStableState)
+  {
+    _patternButtonStableState = rawState;
+    if (rawState == LOW)
     {
-      cyclePattern();
+      _patternButtonPressedMs = now;
+      _patternButtonLongPressHandled = false;
+    }
+    else if (!_patternButtonLongPressHandled)
+    {
+      handlePatternShortPress();
     }
   }
-  _patternLastButtonState = currentButtonState;
+
+  if (_patternButtonStableState == LOW
+      && !_patternButtonLongPressHandled
+      && now - _patternButtonPressedMs >= PATTERN_BUTTON_LONG_PRESS_MS)
+  {
+    _patternButtonLongPressHandled = true;
+    toggleScrollingGrid();
+  }
 }
 
 void setup() {
+  pinMode(VIDEO_MODE_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(PATTERN_BUTTON_PIN, INPUT_PULLUP);
+
   initLcdDisplay();
   _isRcaOutputReady = initRcaOutput();
 
-  startScrollingGrid();
+  displayPattern(*PatternAssets::kAll[0]);
 }
 
 void loop() {
+  toggleVideoModeIfButtonPressed();
+  checkPatternButton();
   updateScrollingGrid();
   delay(1);
 }

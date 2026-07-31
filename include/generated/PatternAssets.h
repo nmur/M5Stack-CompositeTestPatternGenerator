@@ -36,8 +36,9 @@ extern const Asset kWhite;
 extern const Asset kRed;
 extern const Asset kGreen;
 extern const Asset kBlue;
+extern const Asset kScrollingGrid;
 
-constexpr size_t kCount = 8;
+constexpr size_t kCount = 9;
 extern const Asset* const kAll[kCount];
 
 }  // namespace PatternAssets

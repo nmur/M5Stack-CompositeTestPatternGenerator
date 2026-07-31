@@ -35,6 +35,7 @@ PATTERNS = (
     ("red", "red.png"),
     ("green", "green.png"),
     ("blue", "blue.png"),
+    ("scrolling_grid", "scrolling_grid.png"),
 )
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"

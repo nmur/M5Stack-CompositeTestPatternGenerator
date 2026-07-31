@@ -11,6 +11,14 @@ to regenerate `include/generated/PatternAssets.h` and
 `--check`) validates every codec round trip and fails if either generated file
 is stale.
 
+`include/scrolling_grid.png` is derived from `include/grid.png`, with its red
+border pixels changed to white. Regenerate and verify it with:
+
+```sh
+python3 tools/generate_scrolling_grid.py --write
+python3 tools/generate_scrolling_grid.py
+```
+
 ## Pixel conversion
 
 The standalone generator accepts non-interlaced, 8-bit grayscale, RGB,

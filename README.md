@@ -11,6 +11,7 @@ Features:
 
 - PAL/NTSC support
 - Multiple test patterns
+- Refresh-synchronised vertical and horizontal scrolling tests
 - 16-bit colour (RGB565)
 - Built-in battery and screen
 
@@ -44,6 +45,11 @@ connect the composite cable to your CRT TV. Cycle through test patterns with
 the large face button, and toggle between video formats with the small button
 on the right side.
 
+Hold the large face button for 750 ms to enter the scrolling grid in vertical
+mode. Short presses then alternate between vertical and horizontal scrolling.
+Hold the large button again to return to the previously selected static test
+pattern.
+
 Power the device off by holding the small power button for 5 seconds.
 
 The device remembers the last video format, so you do not need to select it
@@ -52,7 +58,7 @@ again every time it boots.
 ## Roadmap
 
 - [x] More patterns
-- [ ] Scrolling tests
+- [x] Scrolling tests
 - [ ] Custom image support
 
 ## Acknowledgements
