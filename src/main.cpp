@@ -16,6 +16,9 @@ Preferences _preferences;
 const int VIDEO_MODE_BUTTON_PIN = 39; // Button B
 const int PATTERN_BUTTON_PIN = 37; // Button A
 const bool DEFAULT_IS_PAL_MODE = true;
+const bool SCROLLING_GRID_IS_PAL_MODE = false;
+const uint16_t RGB565_RED = 0xf800;
+const uint16_t RGB565_WHITE = 0xffff;
 
 bool _videoModeLastButtonState = HIGH;     
 bool _patternLastButtonState = HIGH;
@@ -26,6 +29,15 @@ static_assert(PatternAssets::kCount == 8, "All eight test patterns must be enabl
 
 ScanlineRenderer::Scratch _renderScratch;
 int _currentPatternIndex = 0;
+
+// The scrolling grid shares the existing grid's compressed row data, but has
+// its own palette so the outer red border is white. This preserves the static
+// red-bordered grid for later integration without duplicating its payload.
+PatternAssets::Asset _scrollingGridAsset;
+uint16_t _scrollingGridPalette[3];
+bool _isScrollingGridReady = false;
+int _nextScrollingGridRow = 0;
+int32_t _lastRcaScanLine = -1;
 
 M5UnitRCA _rcaOutput;
 
@@ -67,6 +79,10 @@ void endRcaWrite(void* context);
 bool displayPreview(const PatternAssets::Asset& asset);
 bool displayRca(const PatternAssets::Asset& asset);
 void displayPattern(const PatternAssets::Asset& asset);
+bool prepareScrollingGrid();
+void startScrollingGrid();
+void scrollGridOneRefresh();
+void updateScrollingGrid();
 void cyclePattern();
 void checkPatternButton();
 
@@ -135,7 +151,9 @@ void setRcaOutputVideoMode()
 
 bool initRcaOutput()
 {
-  loadVideoModeState();
+  // The first scrolling implementation is deliberately NTSC-only. Ignore the
+  // saved user preference until scrolling is integrated with the normal UI.
+  _isPalMode = SCROLLING_GRID_IS_PAL_MODE;
   setRcaOutputVideoMode();
 
   const int expectedWidth =
@@ -351,6 +369,117 @@ void displayPattern(const PatternAssets::Asset& asset)
   displayRca(asset);
 }
 
+bool prepareScrollingGrid()
+{
+  const PatternAssets::Asset& source = PatternAssets::kGrid;
+  if (source.palette == nullptr
+      || source.paletteSize != 3
+      || source.paletteSize > sizeof(_scrollingGridPalette)
+          / sizeof(_scrollingGridPalette[0]))
+  {
+    reportError("Grid palette invalid");
+    return false;
+  }
+
+  bool replacedRed = false;
+  for (uint16_t index = 0; index < source.paletteSize; ++index)
+  {
+    const uint16_t colour = source.palette[index];
+    _scrollingGridPalette[index] =
+      colour == RGB565_RED ? RGB565_WHITE : colour;
+    replacedRed = replacedRed || colour == RGB565_RED;
+  }
+  if (!replacedRed)
+  {
+    reportError("Grid border colour missing");
+    return false;
+  }
+
+  _scrollingGridAsset = source;
+  _scrollingGridAsset.palette = _scrollingGridPalette;
+  return true;
+}
+
+void startScrollingGrid()
+{
+  if (!prepareScrollingGrid())
+  {
+    return;
+  }
+
+  displayPattern(_scrollingGridAsset);
+  if (!_isRcaOutputReady)
+  {
+    return;
+  }
+
+  // Decode the row that will wrap onto the bottom before the refresh arrives,
+  // leaving only the framebuffer move and one row write in the VBlank window.
+  _nextScrollingGridRow = 0;
+  if (!decodeAssetRow(
+        &_scrollingGridAsset,
+        _nextScrollingGridRow,
+        _renderScratch.sourceRows[0]))
+  {
+    reportError("Scrolling row decode failed");
+    return;
+  }
+
+  _lastRcaScanLine = _rcaOutput.getScanLine();
+  _isScrollingGridReady = _lastRcaScanLine >= 0;
+  if (!_isScrollingGridReady)
+  {
+    reportError("RCA refresh sync unavailable");
+  }
+}
+
+void scrollGridOneRefresh()
+{
+  // Move the image upward by one pixel and wrap its old top row to the bottom.
+  _rcaOutput.scroll(0, -1);
+  _rcaOutput.pushImage(
+    0,
+    ImageScaler::SourceHeight - 1,
+    ImageScaler::SourceWidth,
+    1,
+    reinterpret_cast<const lgfx::rgb565_t*>(
+      _renderScratch.sourceRows[0]));
+
+  _nextScrollingGridRow =
+    (_nextScrollingGridRow + 1) % ImageScaler::SourceHeight;
+  if (!decodeAssetRow(
+        &_scrollingGridAsset,
+        _nextScrollingGridRow,
+        _renderScratch.sourceRows[0]))
+  {
+    _isScrollingGridReady = false;
+    reportError("Scrolling row decode failed");
+  }
+}
+
+void updateScrollingGrid()
+{
+  if (!_isScrollingGridReady)
+  {
+    return;
+  }
+
+  const int32_t scanLine = _rcaOutput.getScanLine();
+  if (scanLine < 0)
+  {
+    _isScrollingGridReady = false;
+    reportError("RCA refresh sync lost");
+    return;
+  }
+
+  // Panel_CVBS resets its scanline counter at every NTSC display refresh.
+  if (scanLine < _lastRcaScanLine)
+  {
+    scrollGridOneRefresh();
+  }
+  _lastRcaScanLine = scanLine;
+}
+
 void saveIsPalState(bool isPalMode)
 {
   _preferences.begin("video", false);
@@ -406,18 +535,13 @@ void checkPatternButton()
 }
 
 void setup() {
-  pinMode(VIDEO_MODE_BUTTON_PIN, INPUT_PULLUP);
-  pinMode(PATTERN_BUTTON_PIN, INPUT_PULLUP);
-
   initLcdDisplay();
   _isRcaOutputReady = initRcaOutput();
 
-  displayPattern(*PatternAssets::kAll[0]);
+  startScrollingGrid();
 }
 
 void loop() {
-  toggleVideoModeIfButtonPressed();
-  checkPatternButton();
-
-  delay(100);  
+  updateScrollingGrid();
+  delay(1);
 }
