@@ -12,7 +12,8 @@ to regenerate `include/generated/PatternAssets.h` and
 is stale.
 
 `include/scrolling_grid.png` is derived from `include/grid.png`, with its red
-border pixels changed to white. Regenerate and verify it with:
+pixels changed to white and its 2×2 center dots removed from every square.
+Regenerate and verify it with:
 
 ```sh
 python3 tools/generate_scrolling_grid.py --write
