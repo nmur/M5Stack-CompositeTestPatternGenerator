@@ -5,7 +5,9 @@ namespace {
 bool IsValid(
     const ScanlineRenderer::RowProvider& provider,
     const ScanlineRenderer::RowSink& sink) {
-  return provider.decodeRow != nullptr && sink.writeRow != nullptr;
+  return provider.decodeRow != nullptr && sink.writeRow != nullptr
+      && provider.width > 0 && provider.width <= ImageScaler::MaxWidth
+      && provider.height > 0 && provider.height <= ImageScaler::MaxHeight;
 }
 
 void StartWrite(const ScanlineRenderer::RowSink& sink) {
@@ -20,19 +22,9 @@ void EndWrite(const ScanlineRenderer::RowSink& sink) {
   }
 }
 
-int FindCachedRow(const int cachedRows[2], int sourceRowIndex) {
-  if (cachedRows[0] == sourceRowIndex) {
-    return 0;
-  }
-  if (cachedRows[1] == sourceRowIndex) {
-    return 1;
-  }
-  return -1;
-}
-
 }  // namespace
 
-bool ScanlineRenderer::RenderNtsc(
+bool ScanlineRenderer::RenderNative(
     const RowProvider& provider,
     const RowSink& sink,
     Scratch& scratch) {
@@ -43,17 +35,18 @@ bool ScanlineRenderer::RenderNtsc(
   bool succeeded = true;
   StartWrite(sink);
   for (int destinationRowIndex = 0;
-       destinationRowIndex < ImageScaler::SourceHeight;
+       destinationRowIndex < provider.height;
        ++destinationRowIndex) {
     if (!provider.decodeRow(
             provider.context,
             destinationRowIndex,
-            scratch.sourceRows[0])
+            scratch.sourceRow,
+            ImageScaler::MaxWidth)
         || !sink.writeRow(
             sink.context,
             destinationRowIndex,
-            scratch.sourceRows[0],
-            ImageScaler::SourceWidth)) {
+            scratch.sourceRow,
+            provider.width)) {
       succeeded = false;
       break;
     }
@@ -75,88 +68,26 @@ bool ScanlineRenderer::RenderPreview(
   for (int destinationRowIndex = 0;
        destinationRowIndex < ImageScaler::PreviewHeight;
        ++destinationRowIndex) {
-    const int sourceRowIndex = destinationRowIndex * 2;
+    const int sourceRowIndex =
+        destinationRowIndex * provider.height / ImageScaler::PreviewHeight;
     if (!provider.decodeRow(
             provider.context,
             sourceRowIndex,
-            scratch.sourceRows[0])) {
+            scratch.sourceRow,
+            ImageScaler::MaxWidth)) {
       succeeded = false;
       break;
     }
 
     ImageScaler::ScalePreviewRow(
-        scratch.sourceRows[0],
-        scratch.destinationRow);
+        scratch.sourceRow,
+        provider.width,
+        scratch.previewRow);
     if (!sink.writeRow(
             sink.context,
             destinationRowIndex,
-            scratch.destinationRow,
+            scratch.previewRow,
             ImageScaler::PreviewWidth)) {
-      succeeded = false;
-      break;
-    }
-  }
-  EndWrite(sink);
-  return succeeded;
-}
-
-bool ScanlineRenderer::RenderPal(
-    const RowProvider& provider,
-    const RowSink& sink,
-    Scratch& scratch) {
-  if (!IsValid(provider, sink)) {
-    return false;
-  }
-
-  int cachedRows[2] = {-1, -1};
-  bool succeeded = true;
-  StartWrite(sink);
-  for (int destinationRowIndex = 0;
-       destinationRowIndex < ImageScaler::PalHeight;
-       ++destinationRowIndex) {
-    const ImageScaler::SourceRowPair sourceRows =
-        ImageScaler::GetPalSourceRows(destinationRowIndex);
-
-    int lowerSlot = FindCachedRow(cachedRows, sourceRows.lower);
-    if (lowerSlot < 0) {
-      // Preserve an already-decoded upper row if it is in the cache.
-      lowerSlot = cachedRows[0] == sourceRows.upper ? 1 : 0;
-      if (!provider.decodeRow(
-              provider.context,
-              sourceRows.lower,
-              scratch.sourceRows[lowerSlot])) {
-        succeeded = false;
-        break;
-      }
-      cachedRows[lowerSlot] = sourceRows.lower;
-    }
-
-    int upperSlot = lowerSlot;
-    if (sourceRows.upper != sourceRows.lower) {
-      upperSlot = FindCachedRow(cachedRows, sourceRows.upper);
-      if (upperSlot < 0) {
-        upperSlot = 1 - lowerSlot;
-        if (!provider.decodeRow(
-                provider.context,
-                sourceRows.upper,
-                scratch.sourceRows[upperSlot])) {
-          succeeded = false;
-          break;
-        }
-        cachedRows[upperSlot] = sourceRows.upper;
-      }
-    }
-
-    ImageScaler::ScalePalRowBilinear(
-        scratch.sourceRows[lowerSlot],
-        scratch.sourceRows[upperSlot],
-        destinationRowIndex,
-        scratch.destinationRow);
-    if (!sink.writeRow(
-            sink.context,
-            destinationRowIndex,
-            scratch.destinationRow,
-            ImageScaler::PalWidth)) {
       succeeded = false;
       break;
     }

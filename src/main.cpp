@@ -48,7 +48,8 @@ void saveIsPalState(bool isPalMode);
 bool decodeAssetRow(
   const void* context,
   int sourceRowIndex,
-  uint16_t destination[ImageScaler::SourceWidth]);
+  uint16_t* destination,
+  size_t destinationPixels);
 void startPreviewWrite(void* context);
 bool writePreviewRow(
   void* context,
@@ -67,13 +68,14 @@ void endRcaWrite(void* context);
 bool displayPreview(const PatternAssets::Asset& asset);
 bool displayRca(const PatternAssets::Asset& asset);
 void displayPattern(const PatternAssets::Asset& asset);
+void displayCurrentPattern();
 void cyclePattern();
 void checkPatternButton();
 
 M5UnitRCA GetPalRcaConfig()
 {
-  return M5UnitRCA(384, 288,
-                   384, 288,
+  return M5UnitRCA(ImageScaler::PalWidth, ImageScaler::PalHeight,
+                   ImageScaler::PalWidth, ImageScaler::PalHeight,
                    M5UnitRCA::signal_type_t::PAL, 
                    M5UnitRCA::use_psram_t::psram_no_use,
                    26, 
@@ -82,8 +84,8 @@ M5UnitRCA GetPalRcaConfig()
 
 M5UnitRCA GetNtscRcaConfig()
 {
-  return M5UnitRCA(320, 240,
-                   320, 240,
+  return M5UnitRCA(ImageScaler::NtscWidth, ImageScaler::NtscHeight,
+                   ImageScaler::NtscWidth, ImageScaler::NtscHeight,
                    M5UnitRCA::signal_type_t::NTSC, 
                    M5UnitRCA::use_psram_t::psram_no_use,
                    26, 
@@ -139,9 +141,9 @@ bool initRcaOutput()
   setRcaOutputVideoMode();
 
   const int expectedWidth =
-    _isPalMode ? ImageScaler::PalWidth : ImageScaler::SourceWidth;
+    _isPalMode ? ImageScaler::PalWidth : ImageScaler::NtscWidth;
   const int expectedHeight =
-    _isPalMode ? ImageScaler::PalHeight : ImageScaler::SourceHeight;
+    _isPalMode ? ImageScaler::PalHeight : ImageScaler::NtscHeight;
   const size_t expectedFramebufferBytes =
     static_cast<size_t>(expectedWidth) * expectedHeight * sizeof(uint16_t);
   const size_t freeDmaBefore =
@@ -189,19 +191,18 @@ bool initRcaOutput()
 bool decodeAssetRow(
   const void* context,
   int sourceRowIndex,
-  uint16_t destination[ImageScaler::SourceWidth])
+  uint16_t* destination,
+  size_t destinationPixels)
 {
   if (context == nullptr
-      || sourceRowIndex < 0
-      || sourceRowIndex >= ImageScaler::SourceHeight)
+      || sourceRowIndex < 0)
   {
     return false;
   }
 
   const PatternAssets::Asset& asset =
     *static_cast<const PatternAssets::Asset*>(context);
-  if (asset.width != ImageScaler::SourceWidth
-      || asset.height != ImageScaler::SourceHeight)
+  if (sourceRowIndex >= asset.height)
   {
     return false;
   }
@@ -210,7 +211,7 @@ bool decodeAssetRow(
       asset,
       static_cast<uint16_t>(sourceRowIndex),
       destination,
-      ImageScaler::SourceWidth)
+      destinationPixels)
     == PatternDecodeResult::Ok;
 }
 
@@ -259,9 +260,9 @@ bool writeRcaRow(
   int pixelCount)
 {
   const int expectedWidth =
-    _isPalMode ? ImageScaler::PalWidth : ImageScaler::SourceWidth;
+    _isPalMode ? ImageScaler::PalWidth : ImageScaler::NtscWidth;
   const int expectedHeight =
-    _isPalMode ? ImageScaler::PalHeight : ImageScaler::SourceHeight;
+    _isPalMode ? ImageScaler::PalHeight : ImageScaler::NtscHeight;
   if (rowPixels == nullptr
       || destinationRowIndex < 0
       || destinationRowIndex >= expectedHeight
@@ -289,6 +290,8 @@ bool displayPreview(const PatternAssets::Asset& asset)
   const ScanlineRenderer::RowProvider provider = {
     &asset,
     decodeAssetRow,
+    asset.width,
+    asset.height,
   };
   const ScanlineRenderer::RowSink sink = {
     nullptr,
@@ -319,9 +322,17 @@ bool displayRca(const PatternAssets::Asset& asset)
     return false;
   }
 
+  if (asset.width != _rcaOutput.width() || asset.height != _rcaOutput.height())
+  {
+    reportError("Pattern dimensions mismatch");
+    return false;
+  }
+
   const ScanlineRenderer::RowProvider provider = {
     &asset,
     decodeAssetRow,
+    asset.width,
+    asset.height,
   };
   const ScanlineRenderer::RowSink sink = {
     nullptr,
@@ -331,9 +342,7 @@ bool displayRca(const PatternAssets::Asset& asset)
   };
 
   _rcaOutput.clear();
-  const bool rendered = _isPalMode
-    ? ScanlineRenderer::RenderPal(provider, sink, _renderScratch)
-    : ScanlineRenderer::RenderNtsc(provider, sink, _renderScratch);
+  const bool rendered = ScanlineRenderer::RenderNative(provider, sink, _renderScratch);
 
   if (!rendered)
   {
@@ -349,6 +358,12 @@ void displayPattern(const PatternAssets::Asset& asset)
 {
   displayPreview(asset);
   displayRca(asset);
+}
+
+void displayCurrentPattern()
+{
+  const PatternAssets::Pattern& pattern = PatternAssets::kAll[_currentPatternIndex];
+  displayPattern(*(_isPalMode ? pattern.pal : pattern.ntsc));
 }
 
 void saveIsPalState(bool isPalMode)
@@ -387,7 +402,7 @@ void cyclePattern()
 {
   _currentPatternIndex =
     (_currentPatternIndex + 1) % PatternAssets::kCount;
-  displayPattern(*PatternAssets::kAll[_currentPatternIndex]);
+  displayCurrentPattern();
 }
 
 void checkPatternButton()
@@ -412,7 +427,7 @@ void setup() {
   initLcdDisplay();
   _isRcaOutputReady = initRcaOutput();
 
-  displayPattern(*PatternAssets::kAll[0]);
+  displayCurrentPattern();
 }
 
 void loop() {

@@ -19,6 +19,8 @@ from typing import Dict, Iterable, List, Sequence, Tuple
 
 SOURCE_WIDTH = 320
 SOURCE_HEIGHT = 240
+PAL_WIDTH = 384
+PAL_HEIGHT = 288
 CODEC_VERSION = 1
 CODEC_SOLID = "SolidRgb565"
 CODEC_PALETTE_RLE_ROWS = "PaletteRleRows"
@@ -246,6 +248,8 @@ class EncodedAsset:
     name: str
     symbol: str
     png_path: Path
+    width: int
+    height: int
     codec: str
     palette: Tuple[int, ...]
     row_offsets: Tuple[int, ...]
@@ -305,11 +309,15 @@ def encode_asset(
     name: str,
     png_path: Path,
     source_pixels: Sequence[int],
+    width: int = SOURCE_WIDTH,
+    height: int = SOURCE_HEIGHT,
 ) -> EncodedAsset:
-    if len(source_pixels) != SOURCE_WIDTH * SOURCE_HEIGHT:
+    if not (0 < width <= 0xFFFF and 0 < height <= 0xFFFF):
+        raise AssetGenerationError(f"{name}: dimensions exceed the asset format")
+    if len(source_pixels) != width * height:
         raise AssetGenerationError(
             f"{name}: got {len(source_pixels)} pixels; "
-            f"expected {SOURCE_WIDTH * SOURCE_HEIGHT}"
+            f"expected {width * height}"
         )
 
     palette = tuple(dict.fromkeys(source_pixels))
@@ -324,6 +332,8 @@ def encode_asset(
             name=name,
             symbol=_symbol_name(name),
             png_path=png_path,
+            width=width,
+            height=height,
             codec=CODEC_SOLID,
             palette=palette,
             row_offsets=(),
@@ -333,8 +343,8 @@ def encode_asset(
         )
 
     rows = [
-        tuple(source_pixels[y * SOURCE_WIDTH : (y + 1) * SOURCE_WIDTH])
-        for y in range(SOURCE_HEIGHT)
+        tuple(source_pixels[y * width : (y + 1) * width])
+        for y in range(height)
     ]
     unique_rows: List[Tuple[int, ...]] = []
     unique_row_indexes: Dict[Tuple[int, ...], int] = {}
@@ -366,6 +376,8 @@ def encode_asset(
         name=name,
         symbol=_symbol_name(name),
         png_path=png_path,
+        width=width,
+        height=height,
         codec=CODEC_PALETTE_RLE_ROWS,
         palette=palette,
         row_offsets=tuple(row_offsets),
@@ -375,7 +387,7 @@ def encode_asset(
     )
 
 
-def _decode_uleb128(data: bytes, offset: int, end: int) -> Tuple[int, int]:
+def _decode_uleb128(data: bytes, offset: int, end: int, width: int) -> Tuple[int, int]:
     value = 0
     shift = 0
     for _ in range(3):
@@ -385,7 +397,7 @@ def _decode_uleb128(data: bytes, offset: int, end: int) -> Tuple[int, int]:
         offset += 1
         value |= (byte & 0x7F) << shift
         if not byte & 0x80:
-            if value == 0 or value > SOURCE_WIDTH:
+            if value == 0 or value > width:
                 raise AssetGenerationError(f"invalid decoded run length {value}")
             return value, offset
         shift += 7
@@ -394,10 +406,10 @@ def _decode_uleb128(data: bytes, offset: int, end: int) -> Tuple[int, int]:
 
 def decode_row(asset: EncodedAsset, y: int) -> List[int]:
     """Host reference decoder for the generated firmware format."""
-    if y < 0 or y >= SOURCE_HEIGHT:
+    if y < 0 or y >= asset.height:
         raise AssetGenerationError(f"{asset.name}: row {y} is out of range")
     if asset.codec == CODEC_SOLID:
-        return [asset.palette[0]] * SOURCE_WIDTH
+        return [asset.palette[0]] * asset.width
     if asset.codec != CODEC_PALETTE_RLE_ROWS:
         raise AssetGenerationError(f"{asset.name}: unsupported codec {asset.codec}")
 
@@ -413,11 +425,11 @@ def decode_row(asset: EncodedAsset, y: int) -> List[int]:
             raise AssetGenerationError(
                 f"{asset.name}: palette index {palette_index} is out of range"
             )
-        run_length, offset = _decode_uleb128(asset.row_data, offset, end)
-        if len(decoded) + run_length > SOURCE_WIDTH:
+        run_length, offset = _decode_uleb128(asset.row_data, offset, end, asset.width)
+        if len(decoded) + run_length > asset.width:
             raise AssetGenerationError(f"{asset.name}: decoded row is too long")
         decoded.extend([asset.palette[palette_index]] * run_length)
-    if len(decoded) != SOURCE_WIDTH:
+    if len(decoded) != asset.width:
         raise AssetGenerationError(
             f"{asset.name}: decoded row has {len(decoded)} pixels"
         )
@@ -429,7 +441,7 @@ def _validate_round_trip(
 ) -> None:
     decoded = [
         pixel
-        for y in range(SOURCE_HEIGHT)
+        for y in range(asset.height)
         for pixel in decode_row(asset, y)
     ]
     if decoded != list(asset.source_pixels):
@@ -442,25 +454,29 @@ def _validate_round_trip(
         )
         raise AssetGenerationError(
             f"{asset.name}: codec round-trip mismatch at "
-            f"({mismatch % SOURCE_WIDTH}, {mismatch // SOURCE_WIDTH})"
+            f"({mismatch % asset.width}, {mismatch // asset.width})"
         )
 
 
 def build_assets() -> List[EncodedAsset]:
     assets: List[EncodedAsset] = []
     include_directory = REPOSITORY_ROOT / "include"
-    for pattern_name, png_name in PATTERNS:
-        png_path = include_directory / png_name
-        width, height, rgba_pixels = decode_png(png_path)
-        if (width, height) != (SOURCE_WIDTH, SOURCE_HEIGHT):
-            raise AssetGenerationError(
-                f"{png_path}: dimensions are {width}x{height}; "
-                f"expected {SOURCE_WIDTH}x{SOURCE_HEIGHT}"
-            )
-        source_pixels = convert_to_rgb565(rgba_pixels)
-        asset = encode_asset(pattern_name, png_path, source_pixels)
-        _validate_round_trip(asset)
-        assets.append(asset)
+    for suffix, directory, expected_width, expected_height in (
+        ("", include_directory, SOURCE_WIDTH, SOURCE_HEIGHT),
+        ("_pal", include_directory / "pal", PAL_WIDTH, PAL_HEIGHT),
+    ):
+        for pattern_name, png_name in PATTERNS:
+            png_path = directory / png_name
+            width, height, rgba_pixels = decode_png(png_path)
+            if (width, height) != (expected_width, expected_height):
+                raise AssetGenerationError(
+                    f"{png_path}: dimensions are {width}x{height}; "
+                    f"expected {expected_width}x{expected_height}"
+                )
+            source_pixels = convert_to_rgb565(rgba_pixels)
+            asset = encode_asset(pattern_name + suffix, png_path, source_pixels, width, height)
+            _validate_round_trip(asset)
+            assets.append(asset)
     return assets
 
 
@@ -515,8 +531,14 @@ struct Asset {
     )
     suffix = f"""
 
-constexpr size_t kCount = {len(assets)};
-extern const Asset* const kAll[kCount];
+struct Pattern {{
+    const Asset* ntsc;
+    const Asset* pal;
+}};
+
+// One entry per selectable pattern, containing both native video formats.
+constexpr size_t kCount = {len(PATTERNS)};
+extern const Pattern kAll[kCount];
 
 }}  // namespace PatternAssets
 """
@@ -599,8 +621,8 @@ def render_source(assets: Sequence[EncodedAsset]) -> str:
         lines.extend(
             [
                 f"const Asset {asset.symbol} = {{",
-                f"    {SOURCE_WIDTH},",
-                f"    {SOURCE_HEIGHT},",
+                f"    {asset.width},",
+                f"    {asset.height},",
                 "    kCodecVersion,",
                 f"    Codec::{asset.codec},",
                 f"    {len(asset.palette)},",
@@ -616,8 +638,11 @@ def render_source(assets: Sequence[EncodedAsset]) -> str:
             ]
         )
 
-    lines.append("const Asset* const kAll[kCount] = {")
-    lines.append("    " + ", ".join(f"&{asset.symbol}" for asset in assets) + ",")
+    lines.append("const Pattern kAll[kCount] = {")
+    for pattern_name, _ in PATTERNS:
+        lines.append(
+            f"    {{ &{_symbol_name(pattern_name)}, &{_symbol_name(pattern_name + '_pal')} }},"
+        )
     lines.extend(["};", "", "}  // namespace PatternAssets", ""])
     return "\n".join(lines)
 

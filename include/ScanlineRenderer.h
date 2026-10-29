@@ -5,10 +5,11 @@
 
 #include "ImageScaler.h"
 
-// Allocation-free rendering from an arbitrary 320x240 RGB565 row source.
+// Allocation-free rendering from a native PAL or NTSC RGB565 row source.
 //
 // A RowProvider may represent a raw image, a compressed asset, or a generated
-// pattern. decodeRow must write exactly ImageScaler::SourceWidth pixels.
+// pattern. decodeRow writes provider.width pixels and receives the full buffer
+// capacity in destinationPixels.
 //
 // A RowSink receives complete output rows. startWrite/endWrite are optional
 // transaction hooks; endWrite is called after startWrite even if decoding or a
@@ -18,11 +19,14 @@ public:
   typedef bool (*DecodeRowCallback)(
       const void* context,
       int sourceRowIndex,
-      uint16_t destination[ImageScaler::SourceWidth]);
+      uint16_t* destination,
+      size_t destinationPixels);
 
   struct RowProvider {
     const void* context;
     DecodeRowCallback decodeRow;
+    int width;
+    int height;
   };
 
   typedef void (*WriteTransactionCallback)(void* context);
@@ -39,24 +43,18 @@ public:
     WriteTransactionCallback endWrite;
   };
 
-  // PAL needs two decoded source rows and one completed destination row.
-  // NTSC and preview reuse the same storage.
   struct Scratch {
-    uint16_t sourceRows[2][ImageScaler::SourceWidth];
-    uint16_t destinationRow[ImageScaler::PalWidth];
+    uint16_t sourceRow[ImageScaler::MaxWidth];
+    uint16_t previewRow[ImageScaler::PreviewWidth];
   };
 
   static constexpr size_t ScratchBytes = sizeof(Scratch);
 
-  static bool RenderNtsc(
+  static bool RenderNative(
       const RowProvider& provider,
       const RowSink& sink,
       Scratch& scratch);
   static bool RenderPreview(
-      const RowProvider& provider,
-      const RowSink& sink,
-      Scratch& scratch);
-  static bool RenderPal(
       const RowProvider& provider,
       const RowSink& sink,
       Scratch& scratch);

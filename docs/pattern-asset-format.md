@@ -1,6 +1,16 @@
 # Pattern asset format
 
-The 320×240 PNG files under `include/` are the editable source of truth. Run:
+The PNG files are the editable source of truth for two independent native
+image sets:
+
+- `include/*.png`: the existing 320×240 NTSC artwork.
+- `include/pal/*.png`: 384×288 PAL artwork.
+
+Each selectable pattern has an NTSC and a PAL asset. The firmware selects
+the asset for the active video format and decodes it directly to the RCA
+framebuffer, without resizing or interpolating the video image.
+
+Run:
 
 ```sh
 python3 tools/generate_pattern_assets.py --write
@@ -9,7 +19,60 @@ python3 tools/generate_pattern_assets.py --write
 to regenerate `include/generated/PatternAssets.h` and
 `src/generated/PatternAssets.cpp`. Running the tool with no arguments (or with
 `--check`) validates every codec round trip and fails if either generated file
-is stale.
+is stale. The generator checks the dimensions for both sets and emits sixteen
+assets in eight NTSC/PAL pairs; `PatternAssets::kCount` counts selectable
+patterns, not the total number of images.
+
+## Native PAL artwork
+
+Generate and check the PAL source images with the standard-library-only tool:
+
+```sh
+python3 tools/generate_pal_patterns.py --write
+python3 tools/generate_pal_patterns.py --check
+python3 tools/generate_pattern_assets.py --write
+```
+
+The PAL generator draws the pattern geometry at its target dimensions rather
+than enlarging the NTSC bitmap:
+
+- The grid has 24×18 cells with 16-pixel spacing, two-pixel interior lines,
+  2×2 centre dots, and a red outer cell border. NTSC retains its 20×15 cells.
+- Colour bars use the source colours and section layout with sharp native
+  boundaries.
+- Circle outlines are rasterised directly, using the existing artwork's
+  proportions and arrangement with symmetric placement. The outlines contain
+  only black and white pixels.
+- Each gradient has 32 equal nine-pixel steps. Its four bands are 40 pixels
+  high with eight-pixel gaps; labels are copied from the original bitmap font
+  without interpolation.
+- Solid-colour images retain the original colours and encode as two-byte
+  palette payloads for each format.
+
+The source NTSC images remain editable independently. Regenerate the PAL
+artwork and compressed assets after changing a source used by the PAL
+generator. Exact regenerated PNG bytes are checked to detect stale artwork.
+
+## Rendering and preview
+
+`ScanlineRenderer::RenderNative()` accepts dimensions from the selected asset
+and sends complete rows unchanged to the output. The decoder and renderer
+perform no heap allocation; their shared scratch storage is 1,088 bytes.
+The framebuffer allocation and video driver configuration remain 320×240
+for NTSC and 384×288 for PAL.
+
+The 160×120 LCD preview samples the selected format's asset, using integer
+nearest-neighbour coordinates. Scaling is confined to the LCD preview.
+
+Run the standalone host renderer checks with:
+
+```sh
+sh tools/test_scanline_renderer.sh
+```
+
+Native assets remove firmware interpolation artefacts. Horizontal pixel
+expansion inside the composite driver is a separate stage and is unaffected
+by this change; final geometry and appearance still need a CRT comparison.
 
 ## Pixel conversion
 

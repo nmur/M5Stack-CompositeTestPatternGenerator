@@ -36,8 +36,22 @@ extern const Asset kWhite;
 extern const Asset kRed;
 extern const Asset kGreen;
 extern const Asset kBlue;
+extern const Asset kColourBarsPal;
+extern const Asset kGridPal;
+extern const Asset kCirclesPal;
+extern const Asset kGradientsPal;
+extern const Asset kWhitePal;
+extern const Asset kRedPal;
+extern const Asset kGreenPal;
+extern const Asset kBluePal;
 
+struct Pattern {
+    const Asset* ntsc;
+    const Asset* pal;
+};
+
+// One entry per selectable pattern, containing both native video formats.
 constexpr size_t kCount = 8;
-extern const Asset* const kAll[kCount];
+extern const Pattern kAll[kCount];
 
 }  // namespace PatternAssets

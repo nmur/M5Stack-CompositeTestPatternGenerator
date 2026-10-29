@@ -10,6 +10,7 @@ It is *not* intended to be a precision tool for diagnostics and fine tuning.
 Features:
 
 - PAL/NTSC support
+- Native test-pattern images for each video format
 - Multiple test patterns
 - 16-bit colour (RGB565)
 - Built-in battery and screen
